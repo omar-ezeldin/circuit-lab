@@ -138,14 +138,14 @@ describe('Curated Textbook DC & AC Presets', () => {
 		expect(full.allVerified).toBe(true);
 		expect(full.maxDiscrepancy).toBeLessThan(1e-8);
 
-		// Analytical: V(N2) = -((0.4 + j0.8) / (1.4 + j1.3)) * 10
+		// Analytical: V(B) = -((0.4 + j0.8) / (1.4 + j1.3)) * 10
 		const expectedVN2 = Complex.from(0.4, 0.8)
 			.div(Complex.from(1.4, 1.3))
 			.scale(-10);
 		const expectedVN3 = expectedVN2.add(Complex.from(10, 0));
 
-		const vN2 = full.mna.nodeVoltages['N2'].voltage;
-		const vN3 = full.mna.nodeVoltages['N3'].voltage;
+		const vN2 = full.mna.nodeVoltages['B'].voltage;
+		const vN3 = full.mna.nodeVoltages['C'].voltage;
 		expect(vN2.sub(expectedVN2).abs()).toBeLessThan(1e-12);
 		expect(vN3.sub(expectedVN3).abs()).toBeLessThan(1e-12);
 		expect(full.mna.branches['C1'].impedance?.equals(Complex.j(-1), 1e-12)).toBe(true);

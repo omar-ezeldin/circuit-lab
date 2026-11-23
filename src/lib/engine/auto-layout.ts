@@ -72,7 +72,7 @@ export interface LayoutNetlistResult {
 	document: CircuitDocument;
 	layoutMode: LayoutMode;
 	warnings: string[];
-	/** Maps normalized netlist node IDs (and raw aliases) to the final graph node IDs ("0", "N1", ...) */
+	/** Maps normalized netlist node IDs (and raw aliases) to the final graph node IDs ("0", "A", "B", ...) */
 	nodeIdMap: Record<string, string>;
 }
 

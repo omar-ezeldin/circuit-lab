@@ -15,6 +15,7 @@ import {
 	isVoltageControlledSource,
 	parseEngineeringNumber,
 	solveCircuit,
+	validateNodeName,
 	type AnalysisMode,
 	type AutoWireResult,
 	type CircuitComponent,
@@ -114,12 +115,15 @@ function cloneDocument(doc: CircuitDocument): CircuitDocument {
 						: {}),
 					constraint: { ...doc.unknownProblem.constraint }
 				}
-			: undefined
+			: undefined,
+		...(doc.nodeNames
+			? { nodeNames: doc.nodeNames.map((e) => ({ pin: { ...e.pin }, name: e.name })) }
+			: {})
 	};
 }
 
 /**
- * Node IDs (N1, N2, ...) are renumbered by position whenever the layout changes, so anything
+ * Node IDs (A, B, ... or a custom name) are renumbered by position whenever the layout changes, so anything
  * that points at a node is stored with a pin anchor and re-resolved against the current graph.
  */
 function anchorForNode(
@@ -831,7 +835,8 @@ class CircuitStore {
 						}
 					};
 				}),
-			unknownProblem: nextUnknownProblem
+			unknownProblem: nextUnknownProblem,
+			nodeNames: this.reanchorNodeNames(this._document.nodeNames, graph, id)
 		};
 
 		if (this._selectedComponentId === id) {
@@ -843,6 +848,97 @@ class CircuitStore {
 		) {
 			this._theveninTarget = undefined;
 		}
+	}
+
+	/** Re-anchor custom node names away from a component about to be deleted (or drop them). */
+	private reanchorNodeNames(
+		entries: CircuitDocument['nodeNames'],
+		graph: ElectricalGraph,
+		deletedId: string
+	): CircuitDocument['nodeNames'] {
+		if (!entries) return undefined;
+		const next = entries.flatMap((e) => {
+			const pin = reanchorAwayFrom(graph, e.pin, deletedId);
+			return pin ? [{ pin, name: e.name }] : [];
+		});
+		return next.length > 0 ? next : undefined;
+	}
+
+	/**
+	 * Gives a node a custom name (stored as a pin anchor, so it follows the node when the layout
+	 * changes). An empty name clears the custom name. Returns an error message, or null on success.
+	 */
+	renameNode(nodeId: string, name: string): string | null {
+		const node = this._graph.nodes[nodeId];
+		if (!node || node.isReference) return 'Only non-reference nodes can be renamed.';
+		const pin = node.componentPins[0];
+		if (!pin) return 'This node has no component pin to anchor a name to.';
+
+		const trimmed = name.trim();
+		if (trimmed !== '') {
+			const taken = Object.keys(this._graph.nodes).filter((id) => id !== nodeId);
+			const error = validateNodeName(trimmed, taken);
+			if (error) return error;
+		}
+
+		const onThisNode = (e: { pin: PinAnchor }) =>
+			nodeForAnchor(this._graph, e.pin) === nodeId;
+		const existing = this._document.nodeNames ?? [];
+		const current = existing.find(onThisNode);
+		// Nothing to change: clearing an auto name, re-saving the auto letter, or the same custom name.
+		if (trimmed === '' || (!current && trimmed === nodeId) ? !current : current?.name === trimmed)
+			return null;
+		const kept = existing.filter((e) => !onThisNode(e));
+		const nextNames =
+			trimmed === ''
+				? kept
+				: [
+						...kept,
+						{ pin: { componentId: pin.componentId, pinIndex: pin.pinIndex }, name: trimmed }
+					];
+
+		this.recordSnapshot();
+
+		// Pin-anchor anything that references this node by its (about to change) ID only.
+		const graph = this._graph;
+		let up = this._document.unknownProblem;
+		if (
+			up &&
+			up.constraint.kind === 'node_voltage' &&
+			up.constraint.targetId === nodeId &&
+			!up.constraint.targetPin
+		) {
+			up = { ...up, constraint: { ...up.constraint, targetPin: anchorForNode(graph, nodeId) } };
+		}
+		const components = this._document.components.map((c) => {
+			const ref = c.controlRef;
+			if (!ref) return c;
+			const needPos = ref.controlNodePos === nodeId && !ref.controlNodePosPin;
+			const needNeg = ref.controlNodeNeg === nodeId && !ref.controlNodeNegPin;
+			if (!needPos && !needNeg) return c;
+			return {
+				...c,
+				controlRef: {
+					...ref,
+					...(needPos ? { controlNodePosPin: anchorForNode(graph, nodeId) } : {}),
+					...(needNeg ? { controlNodeNegPin: anchorForNode(graph, nodeId) } : {})
+				}
+			};
+		});
+		const tt = this._theveninTarget;
+		if (tt?.kind === 'terminals' && (tt.nodeA === nodeId || tt.nodeB === nodeId)) {
+			this._theveninTarget = {
+				...tt,
+				pinA: tt.pinA ?? (tt.nodeA === nodeId ? anchorForNode(graph, nodeId) : undefined),
+				pinB: tt.pinB ?? (tt.nodeB === nodeId ? anchorForNode(graph, nodeId) : undefined)
+			};
+		}
+
+		const doc: CircuitDocument = { ...this._document, components, unknownProblem: up };
+		if (nextNames.length > 0) doc.nodeNames = nextNames;
+		else delete doc.nodeNames;
+		this._document = doc;
+		return null;
 	}
 
 	deleteSelected(): void {

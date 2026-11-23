@@ -8,7 +8,8 @@ import { Complex, formatRational } from '../complex';
 import {
 	buildElectricalGraph,
 	getPassiveImpedance as resolvePassiveImpedance,
-	parseDependentGain
+	parseDependentGain,
+	latexNodeId
 } from '../graph';
 import {
 	isDependentSourceKind,
@@ -231,7 +232,7 @@ export function formatDependentControlVar(comp: CircuitComponent, doc: CircuitDo
 		}
 		const pos = ref?.controlNodePos ?? '?';
 		const neg = ref?.controlNodeNeg ?? '0';
-		return neg === '0' ? `V_{${pos}}` : `(V_{${pos}} - V_{${neg}})`;
+		return neg === '0' ? `V_{${latexNodeId(pos)}}` : `(V_{${latexNodeId(pos)}} - V_{${latexNodeId(neg)}})`;
 	}
 	const branchId = ref?.controlBranchComponentId ?? '?';
 	const target = doc.components.find((c) => c.id === branchId);

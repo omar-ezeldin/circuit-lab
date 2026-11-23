@@ -146,7 +146,10 @@ export function solveCircuit(
 				methods.mesh = solveMesh(electricalDoc, mna);
 				break;
 			case 'superposition':
-				methods.superposition = solveSuperposition(electricalDoc, mna);
+				methods.superposition = solveSuperposition(electricalDoc, mna, {
+					targetComponentId:
+						safeTheveninTarget?.kind === 'component' ? safeTheveninTarget.componentId : undefined
+				});
 				break;
 			case 'source_transform':
 				methods.source_transform = solveSourceTransform(electricalDoc, mna, {

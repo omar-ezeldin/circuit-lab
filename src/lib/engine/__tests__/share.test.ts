@@ -272,7 +272,7 @@ describe('Shareable Circuit URL Codec (share.ts)', () => {
 		const doc = makeDcDividerDoc();
 		const targets: TheveninTarget[] = [
 			{ kind: 'component', componentId: 'R2' },
-			{ kind: 'terminals', nodeA: 'N2', nodeB: '0' }
+			{ kind: 'terminals', nodeA: 'B', nodeB: '0' }
 		];
 		const unitSystems: UnitSystemId[] = ['auto', 'ohm-v-a', 'kohm-v-ma', 'mohm-v-ua'];
 
@@ -486,8 +486,8 @@ describe('Shareable Circuit URL Codec (share.ts)', () => {
 		expect(decodedSol.mna.valid).toBe(true);
 		expect(decodedSol.allVerified).toBe(true);
 		expect(
-			decodedSol.mna.nodeVoltages['N2'].voltage
-				.sub(origSol.mna.nodeVoltages['N2'].voltage)
+			decodedSol.mna.nodeVoltages['B'].voltage
+				.sub(origSol.mna.nodeVoltages['B'].voltage)
 				.abs()
 		).toBeLessThan(1e-12);
 	});

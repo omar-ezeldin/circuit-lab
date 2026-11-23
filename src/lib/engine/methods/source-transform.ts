@@ -14,7 +14,7 @@
  */
 
 import { Complex } from '../complex';
-import { buildElectricalGraph, parseSourceValue } from '../graph';
+import { buildElectricalGraph, parseSourceValue, latexNodeId } from '../graph';
 import { solveComplexLinearSystem } from '../linalg';
 import type {
 	AnalysisMode,
@@ -345,7 +345,7 @@ export function solveSourceTransform(
 				title: `Step ${steps.length + 1}: Combine Parallel Current Sources`,
 				description: `Combined parallel current sources (${group.map((g) => g.label).join(', ')}) between ${u} and ${v}.`,
 				latex: [
-					`${newLabel} = ${formatLatexValue(iSum, mode)}\\text{ A} \\quad (${u} \\to ${v})`
+					`${newLabel} = ${formatLatexValue(iSum, mode)}\\text{ A} \\quad (${latexNodeId(u)} \\to ${latexNodeId(v)})`
 				]
 			});
 			changed = true;
@@ -505,7 +505,7 @@ export function solveSourceTransform(
 				title: `Step ${steps.length + 1}: Source Transform (Thévenin → Norton)`,
 				description: `Transformed series ${vEdge.label} (${formatLatexValue(vRiseUtoW, mode)} V) and ${zEdge.label} into Norton current source ${newILabel} in parallel with ${newZLabel} between ${u} and ${v}.`,
 				latex: [
-					`${newILabel} = \\frac{V_s}{Z_s} = \\frac{${formatLatexValue(vRiseUtoW, mode)}}{${formatLatexValue(zEdge.value, mode)}} = ${formatLatexValue(iN, mode)}\\text{ A}\\;(${u} \\to ${v})`
+					`${newILabel} = \\frac{V_s}{Z_s} = \\frac{${formatLatexValue(vRiseUtoW, mode)}}{${formatLatexValue(zEdge.value, mode)}} = ${formatLatexValue(iN, mode)}\\text{ A}\\;(${latexNodeId(u)} \\to ${latexNodeId(v)})`
 				],
 				snapshotNote: `Eliminated node ${w} via V→I transformation.`
 			});
@@ -658,7 +658,7 @@ export function solveSourceTransform(
 			: 'Simplified the circuit with source transformations and series/parallel combinations, then worked back to every branch.';
 
 	const finalLatex = graph.nonRefNodeIds.map(
-		(nid) => `V_{${nid}} = ${formatLatexValue(nodeVoltages[nid], mode)}\\text{ V}`
+		(nid) => `V_{${latexNodeId(nid)}} = ${formatLatexValue(nodeVoltages[nid], mode)}\\text{ V}`
 	);
 
 	// Course-style finish: the asked branch is still in the circuit, so read its value off

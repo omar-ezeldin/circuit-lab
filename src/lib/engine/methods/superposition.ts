@@ -8,7 +8,7 @@
  */
 
 import { Complex } from '../complex';
-import { buildElectricalGraph, parseSourceValue } from '../graph';
+import { buildElectricalGraph, parseSourceValue, latexNodeId } from '../graph';
 import { solveMNA } from '../mna';
 import {
 	isDependentSourceKind,
@@ -20,11 +20,22 @@ import {
 } from '../types';
 import {
 	buildDeactivatedDocument,
+	formatLatexTerm,
 	formatLatexValue,
+	getPassiveImpedance,
 	latexSub,
 	remapDependentControlNodes,
 	verifyAgainstMna
 } from './shared';
+import { solveNodal } from './nodal';
+import {
+	latexName,
+	reduceSeriesParallel,
+	reqLatex,
+	walkToTarget,
+	type SpEdge,
+	type SpReduction
+} from './sp-reduce';
 
 function mapSubNodesToOriginal(
 	origGraph: ReturnType<typeof buildElectricalGraph>,
@@ -68,7 +79,248 @@ function mapSubNodesToOriginal(
 	return mapped;
 }
 
-export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): MethodResult {
+const PRIME_TITLE = ['′', '″', '‴'];
+/** Part labels: first, second, third (prime marks), then (4), (5)... */
+function primeTitle(k: number): string {
+	return PRIME_TITLE[k] ?? `(${k + 1})`;
+}
+/** LaTeX prime marks for part k (they go right after the letter), then ^{(4)}... */
+function primeTex(k: number): string {
+	return ["'", "''", "'''"][k] ?? `^{(${k + 1})}`;
+}
+
+const PASSIVE_KINDS = new Set(['resistor', 'capacitor', 'inductor']);
+
+/** Equal within 1e-6 relative (plus a tiny absolute floor for zeros). */
+function closeTo(a: Complex, b: Complex): boolean {
+	return a.sub(b).abs() <= 1e-6 * Math.max(a.abs(), b.abs()) + 1e-12;
+}
+
+function eqSymbol(m: 'dc' | 'ac'): string {
+	return m === 'ac' ? 'Z_{eq}' : 'R_{eq}';
+}
+
+interface PartWork {
+	lines: string[];
+	/** Target current / voltage of this part (pin 0 -> pin 1), when a target is set. */
+	i?: Complex;
+	v?: Complex;
+}
+
+interface PartInput {
+	k: number;
+	activeSrc: CircuitComponent;
+	sources: CircuitComponent[];
+	subDoc: CircuitDocument;
+	subGraph: ReturnType<typeof buildElectricalGraph>;
+	subSol: MnaSolution;
+	subMode: 'dc' | 'ac';
+	hasDependent: boolean;
+	target?: CircuitComponent;
+}
+
+/** Series-parallel reduction of the sub-circuit as seen by the active source (no dependent sources). */
+function reduceSubCircuit(a: PartInput): SpReduction | undefined {
+	const srcNodes = a.subGraph.componentNodes[a.activeSrc.id];
+	if (!srcNodes || srcNodes.length < 2) return undefined;
+	const edges: SpEdge[] = [];
+	const shorts: Array<[string, string]> = [];
+	for (const comp of a.subDoc.components) {
+		const nodes = a.subGraph.componentNodes[comp.id];
+		if (!nodes || nodes.length < 2) continue;
+		if (PASSIVE_KINDS.has(comp.kind)) {
+			const z = getPassiveImpedance(comp, a.subMode, a.subDoc.frequencyHz);
+			edges.push({
+				id: comp.id,
+				label: comp.label,
+				...(comp.kind === 'resistor' ? {} : { name: `Z_{${latexSub(comp.label)}}` }),
+				nodeA: nodes[0],
+				nodeB: nodes[1],
+				z: z ?? Complex.from(Infinity, 0)
+			});
+		} else if (comp.kind === 'voltage_source' && comp.id !== a.activeSrc.id) {
+			shorts.push([nodes[0], nodes[1]]);
+		}
+	}
+	return reduceSeriesParallel({ edges, shorts, ports: [srcNodes[0], srcNodes[1]] });
+}
+
+/** Node equations of the sub-circuit (spliced from the nodal method), or null if unavailable. */
+function nodalFallbackLines(subDoc: CircuitDocument, subSol: MnaSolution): string[] | null {
+	try {
+		const res = solveNodal(subDoc, subSol);
+		if (!res.applicable) return null;
+		const out: string[] = [];
+		for (const step of res.steps) {
+			if (!step.latex || step.latex.length === 0) continue;
+			const heading = step.title.replace(/^\d+\.\s*/, '').replace(/&/g, 'and');
+			out.push(`\\text{${heading}}`, ...step.latex);
+		}
+		return out.length > 0 ? out : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The worked solution of one part (one source on, the rest off), in the course's style.
+ * Every number shown agrees with the sub-circuit MNA solve; if the series-parallel chain does not
+ * reproduce it (or the sub-circuit is not series-parallel) the chain is dropped.
+ */
+function workPart(a: PartInput): PartWork {
+	const { subMode, subSol, activeSrc, target } = a;
+	const val = (c: Complex) => formatLatexValue(c, subMode);
+	const term = (c: Complex) => formatLatexTerm(c, subMode);
+	const lines: string[] = [];
+
+	const off = a.sources
+		.filter((s) => s.id !== activeSrc.id)
+		.map(
+			(s) =>
+				`\\text{${latexSub(s.label)} off} \\to \\text{${s.kind === 'voltage_source' ? 'short' : 'open'}}`
+		);
+	if (off.length > 0) lines.push(off.join(',\\; '));
+
+	const br = target ? subSol.branches[target.id] : undefined;
+	const tn = target ? latexName(target.label) : '';
+	const iName = `I${primeTex(a.k)}_{${tn}}`;
+	const vName = `V${primeTex(a.k)}_{${tn}}`;
+
+	// Try the series-parallel chain.
+	const chain: string[] = [];
+	let chainI: Complex | undefined;
+	let chainV: Complex | undefined;
+	let red: SpReduction | undefined;
+	try {
+		red = a.hasDependent ? undefined : reduceSubCircuit(a);
+	} catch {
+		red = undefined;
+	}
+	let ok = false;
+	try {
+		if (red?.ok && red.root) {
+			const root = red.root;
+			const srcBranch = subSol.branches[activeSrc.id];
+			const srcVal = parseSourceValue(activeSrc, subMode);
+			let iSrc: Complex | undefined;
+			let entry = red.portP;
+			const srcLine: string[] = [];
+			if (srcVal && activeSrc.kind === 'voltage_source') {
+				iSrc = srcVal.div(root.z);
+				srcLine.push(
+					`I_s = \\frac{${latexName(activeSrc.label)}}{${eqSymbol(subMode)}} = \\frac{${val(srcVal)}}{${term(root.z)}} = ${val(iSrc)}\\text{ A}`
+				);
+			} else if (srcVal && activeSrc.kind === 'current_source') {
+				// A current source pushes its current out of pin 1, into the network, and takes it back at pin 0.
+				iSrc = srcVal;
+				entry = red.portQ;
+				srcLine.push(`I_s = ${latexName(activeSrc.label)} = ${val(srcVal)}\\text{ A}`);
+			}
+			const sourceAgrees =
+				iSrc !== undefined &&
+				srcBranch !== undefined &&
+				Math.abs(iSrc.abs() - srcBranch.current.abs()) <=
+					1e-6 * Math.max(iSrc.abs(), srcBranch.current.abs()) + 1e-12;
+
+			if (iSrc && sourceAgrees) {
+				const idle = [...red.dangling, ...red.shorted].map((e) => latexSub(e.label));
+				const notes =
+					idle.length > 0
+						? [`\\text{${idle.join(', ')} ${idle.length === 1 ? 'carries' : 'carry'} no current}`]
+						: [];
+				const head = [...notes, reqLatex(root, subMode, eqSymbol(subMode)), ...srcLine];
+
+				if (!target || !br) {
+					lines.push(...head);
+					return { lines };
+				}
+
+				chain.push(...head);
+				const zT = PASSIVE_KINDS.has(target.kind)
+					? getPassiveImpedance(target, subMode, a.subDoc.frequencyHz)
+					: null;
+				const zName = target.kind === 'resistor' ? tn : `Z_{${latexSub(target.label)}}`;
+				let iT: Complex | undefined;
+				if (zT && !zT.isZero(1e-12)) {
+					const walk = walkToTarget({
+						root,
+						entry,
+						current: iSrc,
+						currentName: 'I_s',
+						targetId: target.id,
+						finalName: iName,
+						mode: subMode
+					});
+					if (walk && closeTo(walk.current, br.current)) {
+						chain.push(...walk.lines);
+						if (walk.reversed) {
+							chain.push(
+								`${iName} = -${walk.name} = ${val(walk.current)}\\text{ A}`,
+								`\\text{(${latexSub(target.label)} carries it against its arrow, so it is negative)}`
+							);
+						} else if (walk.name !== iName) {
+							chain.push(`${iName} = ${walk.name} = ${val(walk.current)}\\text{ A}`);
+						}
+						iT = walk.current;
+					} else if (
+						!walk &&
+						[...red.dangling, ...red.shorted].some((e) => e.id === target.id) &&
+						closeTo(Complex.zero(), br.current)
+					) {
+						chain.push(`${iName} = 0\\text{ A}`);
+						iT = Complex.zero();
+					}
+					if (iT) {
+						const vT = iT.mul(zT);
+						if (closeTo(vT, br.voltage)) {
+							chain.push(
+								`${vName} = ${iName} ${zName} = ${term(iT)} \\cdot ${term(zT)} = ${val(vT)}\\text{ V}`
+							);
+							chainI = iT;
+							chainV = vT;
+							ok = true;
+						}
+					}
+				}
+			}
+		}
+
+	} catch {
+		// Never throw: drop the chain and fall back for this part.
+		ok = false;
+		chain.length = 0;
+	}
+	if (ok) {
+		lines.push(...chain);
+		return { lines, i: chainI, v: chainV };
+	}
+	if (!target || !br) return { lines };
+
+	// Fallback for this part: node equations of the sub-circuit, then the target from the solution.
+	lines.push("\\text{This part isn't a series–parallel circuit, so solve it by nodal analysis:}");
+	const nodal = nodalFallbackLines(a.subDoc, subSol);
+	if (nodal) {
+		lines.push(...nodal);
+	} else {
+		for (const [nid, nr] of Object.entries(subSol.nodeVoltages)) {
+			if (nr.isReference) continue;
+			lines.push(`V_{${latexNodeId(nid)}} = ${val(nr.voltage)}\\text{ V}`);
+		}
+	}
+	lines.push(`${iName} = ${val(br.current)}\\text{ A}`, `${vName} = ${val(br.voltage)}\\text{ V}`);
+	return { lines, i: br.current, v: br.voltage };
+}
+
+export interface SuperpositionOptions {
+	/** Passive two-terminal element every part works toward (its current and voltage). */
+	targetComponentId?: string;
+}
+
+export function solveSuperposition(
+	doc: CircuitDocument,
+	mna: MnaSolution,
+	options: SuperpositionOptions = {}
+): MethodResult {
 	const title = 'Superposition Theorem';
 	if (!mna.valid) {
 		return {
@@ -122,6 +374,22 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 		totalBranchV[comp.id] = Complex.zero();
 		totalBranchI[comp.id] = Complex.zero();
 	}
+
+	const target =
+		!isMultiFreq && options.targetComponentId
+			? twoTerminal.find(
+					(c) =>
+						c.id === options.targetComponentId &&
+						c.kind !== 'voltmeter' &&
+						// An independent source is switched off in some parts, so it can't be the
+						// element we work toward; the Ans. step still reports it.
+						c.kind !== 'voltage_source' &&
+						c.kind !== 'current_source' &&
+						mna.branches[c.id] !== undefined
+				)
+			: undefined;
+	const partI: Complex[] = [];
+	const partV: Complex[] = [];
 
 	const dependentSources = doc.components.filter((c) => isDependentSourceKind(c.kind));
 	const depLabels = dependentSources.map((d) => d.label).join(', ');
@@ -213,7 +481,7 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 
 		const contribLatex = origGraph.nonRefNodeIds.map(
 			(nid) =>
-				`V_{${nid}}^{(${k + 1})} = ${formatLatexValue(subNodesMapped[nid], subMode)}\\text{ V}`
+				`V_{${latexNodeId(nid)}}^{(${k + 1})} = ${formatLatexValue(subNodesMapped[nid], subMode)}\\text{ V}`
 		);
 		const branchContribLatex = twoTerminal.slice(0, 4).map((c) => {
 			const br = subSol.branches[c.id];
@@ -221,10 +489,43 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 			return `I_{${latexSub(c.label)}}^{(${k + 1})} = ${formatLatexValue(iVal, subMode)}\\text{ A}`;
 		});
 
+		if (isMultiFreq) {
+			steps.push({
+				title: `${k + 2}. Contribution of ${activeSrc.label} Alone`,
+				description: `Keep ${activeSrc.label} active at f = ${fK} Hz${dependentSources.length > 0 ? ` (with dependent source(s) ${depLabels} active)` : ''}; deactivate all other independent sources.`,
+				latex: [...contribLatex, ...branchContribLatex],
+				highlightIds: [activeSrc.id]
+			});
+			continue;
+		}
+
+		const work = workPart({
+			k,
+			activeSrc,
+			sources,
+			subDoc,
+			subGraph,
+			subSol,
+			subMode,
+			hasDependent: dependentSources.length > 0,
+			target
+		});
+		if (target && work.i && work.v) {
+			partI.push(work.i);
+			partV.push(work.v);
+		}
+		const intro =
+			sources.length > 1
+				? `Keep ${activeSrc.label} on and turn the other sources off${target ? `, then find ${target.label}` : ''}.`
+				: `Keep ${activeSrc.label} on${target ? ` and find ${target.label}` : ''}.`;
 		steps.push({
-			title: `${k + 2}. Contribution of ${activeSrc.label} Alone`,
-			description: `Keep ${activeSrc.label} active${isMultiFreq ? ` at f = ${fK} Hz` : ''}${dependentSources.length > 0 ? ` (with dependent source(s) ${depLabels} active)` : ''}; deactivate all other independent sources.`,
-			latex: [...contribLatex, ...branchContribLatex],
+			title: `${k + 2}. Part ${primeTitle(k)}: ${activeSrc.label} Alone`,
+			description:
+				dependentSources.length > 0
+					? `${intro} The dependent source(s) ${depLabels} stay on.`
+					: intro,
+			latex:
+				target && work.i ? work.lines : [...work.lines, ...contribLatex, ...branchContribLatex],
 			highlightIds: [activeSrc.id]
 		});
 	}
@@ -267,7 +568,7 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 			const rmsTotal = Math.sqrt(rmsSqSum);
 			const rhsExpr = terms.join(' + ') || '0';
 			timeDomainLatex.push(
-				`v_{${nid}}(t) = ${rhsExpr}\\text{ V},\\quad V_{${nid},\\text{rms}} = ${formatLatexValue(Complex.from(rmsTotal, 0), 'ac')}\\text{ V}`
+				`v_{${latexNodeId(nid)}}(t) = ${rhsExpr}\\text{ V},\\quad V_{${latexNodeId(nid)},\\text{rms}} = ${formatLatexValue(Complex.from(rmsTotal, 0), 'ac')}\\text{ V}`
 			);
 		}
 
@@ -292,7 +593,7 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 	// Same-frequency combination & MNA cross-verification
 	const sumLatex = [
 		...origGraph.nonRefNodeIds.map(
-			(nid) => `V_{${nid}} = \\sum_k V_{${nid}}^{(k)} = ${formatLatexValue(totalNodeV[nid], mna.mode)}\\text{ V}`
+			(nid) => `V_{${latexNodeId(nid)}} = \\sum_k V_{${latexNodeId(nid)}}^{(k)} = ${formatLatexValue(totalNodeV[nid], mna.mode)}\\text{ V}`
 		),
 		...twoTerminal.slice(0, 4).map(
 			(c) =>
@@ -300,10 +601,28 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 		)
 	];
 
+	const targetSum =
+		target && partI.length === sources.length && partV.length === sources.length
+			? (() => {
+					const tn = latexName(target.label);
+					const term = (c: Complex) => formatLatexTerm(c, mna.mode);
+					const sumLine = (sym: 'I' | 'V', parts: Complex[], total: Complex, unit: string) =>
+						`${sym}_{${tn}} = ${parts.map((_, k) => `${sym}${primeTex(k)}_{${tn}}`).join(' + ')} = ${
+							parts.length > 1 ? `${parts.map(term).join(' + ')} = ` : ''
+						}${formatLatexValue(total, mna.mode)}\\text{ ${unit}}`;
+					return [
+						sumLine('I', partI, totalBranchI[target.id], 'A'),
+						sumLine('V', partV, totalBranchV[target.id], 'V')
+					];
+				})()
+			: undefined;
+
 	steps.push({
 		title: `${sources.length + 2}. Superposition Sum`,
-		description: 'Sum individual source responses to obtain total node voltages and branch currents.',
-		latex: sumLatex
+		description: targetSum
+			? `Add the parts to get the current and voltage of ${target!.label}.`
+			: 'Sum individual source responses to obtain total node voltages and branch currents.',
+		latex: targetSum ?? sumLatex
 	});
 
 	const verification = verifyAgainstMna(mna, {
@@ -317,7 +636,7 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 		title,
 		applicable: true,
 		steps,
-		summaryLatex: sumLatex.slice(0, 4).join(' \\\\ '),
+		summaryLatex: (targetSum ?? sumLatex).slice(0, 4).join(' \\\\ '),
 		...verification
 	};
 }

@@ -69,7 +69,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 	it('2. DC Supermesh Circuit (shared current source between two meshes): all 6 methods agree (< 1e-8)', () => {
 		// Mesh 1 (left): V1=12V (0,0)-(0,4), R1=4Ω (0,0)-(4,0), I1=2A (4,4)->(4,0) shared with Mesh 2
 		// Mesh 2 (right): R2=2Ω (4,0)-(8,0), R3=6Ω (8,0)-(8,4), bottom wire (0,4)-(8,4)
-		// Hand solution: V(N2) [at (4,0)]: (V2 - 12)/4 + V2/(2+6) = 2 => (1/4+1/8)V2 = 5 => (3/8)V2 = 5 => V2 = 40/3 V
+		// Hand solution: V(B) [at (4,0)]: (V2 - 12)/4 + V2/(2+6) = 2 => (1/4+1/8)V2 = 5 => (3/8)V2 = 5 => V2 = 40/3 V
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -273,7 +273,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 	});
 
 	it('4b. Source transformation does not ping-pong Norton <-> Thévenin', () => {
-		// I1 || R1 (ground-N1), V1 from N1 to N2, I2 from N2 to ground
+		// I1 || R1 (ground-A), V1 from A to B, I2 from B to ground
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -396,7 +396,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(lastStep.title).toContain('Multi-Frequency');
 		const allLatex = lastStep.latex!.join('\n');
 		expect(allLatex).toContain('\\cos(');
-		expect(allLatex).toContain('V_{N2,\\text{rms}}');
+		expect(allLatex).toContain('V_{B,\\text{rms}}');
 	});
 
 	it('7b. Multi-Frequency: MNA is flagged and single-phasor methods are not applicable', () => {
@@ -489,7 +489,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 	});
 
 	it('9. Ideal Voltmeters spanning multiple loads pass all 6 pedagogical methods with allVerified=true and maxDiscrepancy < 1e-8', () => {
-		// 9a. DC Divider preset with VM1 spanning across R1 + R2 (V_N1 - V_0 = 12 V) and VM2 across R1 (4 V)
+		// 9a. DC Divider preset with VM1 spanning across R1 + R2 (V_A - V_0 = 12 V) and VM2 across R1 (4 V)
 		const dividerPreset = getPresetById('dc-divider')!;
 		const dividerWithVm: CircuitDocument = {
 			...dividerPreset.document,
@@ -512,7 +512,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(dividerSol.allVerified).toBe(true);
 		expect(dividerSol.maxDiscrepancy).toBeLessThan(1e-8);
 
-		// 9b. DC Wheatstone Bridge preset with VM1 spanning across R1 + R5 (node N1 to right bridge node)
+		// 9b. DC Wheatstone Bridge preset with VM1 spanning across R1 + R5 (node A to right bridge node)
 		const bridgePreset = getPresetById('dc-wheatstone-bridge')!;
 		const bridgeWithVm: CircuitDocument = {
 			...bridgePreset.document,
@@ -536,13 +536,13 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(bridgeSol.allVerified).toBe(true);
 		expect(bridgeSol.maxDiscrepancy).toBeLessThan(1e-8);
 
-		// 9c. AC Impedance Supernode preset with VM1 spanning across C1 + R1 (between N2 and GND) and VM2 across L1 + R3 (between N3 and GND)
+		// 9c. AC Impedance Supernode preset with VM1 spanning across C1 + R1 (between B and GND) and VM2 across L1 + R3 (between C and GND)
 		const acPreset = getPresetById('ac-impedance-supernode')!;
 		const acWithVm: CircuitDocument = {
 			...acPreset.document,
 			components: [
 				...acPreset.document.components,
-				comp('VM1', 'voltmeter', 16, 0, 0, '0') // +:(14,0)->(6,4)[N1], -:(18,0)->(28,4)[N4]
+				comp('VM1', 'voltmeter', 16, 0, 0, '0') // +:(14,0)->(6,4)[A], -:(18,0)->(28,4)[D]
 			],
 			wires: [
 				...acPreset.document.wires,
@@ -561,10 +561,10 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 	});
 
 	it('10. Superposition with Dependent Source + 2 Independent Sources keeps dependent source active in every sub-circuit', () => {
-		// V1=12V (N1->0), R1=4Ω (N1->N2), R2=4Ω (N2->0), E1=2*V_R1 (N3->0), R3=2Ω (N2->N3), I1=2A (0->N2)
-		// Hand solution: V_N3 = 2*(12 - V2) = 24 - 2*V2
-		// KCL at N2: (V2 - 12)/4 + V2/4 + (V2 - (24 - 2*V2))/2 - 2 = 0
-		// *4: (V2 - 12) + V2 + 2*(3*V2 - 24) - 8 = 0 => 8*V2 = 68 => V2 = 8.5 V, V_N3 = 7 V
+		// V1=12V (A->0), R1=4Ω (A->B), R2=4Ω (B->0), E1=2*V_R1 (C->0), R3=2Ω (B->C), I1=2A (0->B)
+		// Hand solution: V_C = 2*(12 - V2) = 24 - 2*V2
+		// KCL at B: (V2 - 12)/4 + V2/4 + (V2 - (24 - 2*V2))/2 - 2 = 0
+		// *4: (V2 - 12) + V2 + 2*(3*V2 - 24) - 8 = 0 => 8*V2 = 68 => V2 = 8.5 V, V_C = 7 V
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -607,7 +607,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(sup.steps[0].description).toContain('NEVER deactivated');
 	});
 
-	it('11. Thévenin & Norton Test-Source Method with Dependent Sources (VCVS & CCCS) matches exact textbook R_th', () => {
+	it('11. Thévenin & Norton with Dependent Sources (VCVS & CCCS) matches exact textbook R_th', () => {
 		// 11a. dc-dependent-vcvs preset across R2: V_th = 80/7 V, R_th = 4000/7 Ω, I_N = 20 mA
 		const preset = getPresetById('dc-dependent-vcvs')!;
 		const fullVcvs = solveCircuit(preset.document, {
@@ -618,15 +618,18 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(fullVcvs.theveninNorton!.vth.re).toBeCloseTo(80 / 7, 9);
 		expect(fullVcvs.theveninNorton!.zth!.re).toBeCloseTo(4000 / 7, 9);
 		expect(fullVcvs.theveninNorton!.isc!.re).toBeCloseTo(0.02, 9);
+		// Independent + dependent sources: R_th = V_oc / I_sc (short A-B).
 		expect(
-			fullVcvs.methods.thevenin_norton!.steps.some((s) => s.title.includes('Test-Source Method'))
+			fullVcvs.methods.thevenin_norton!.steps.some((s) =>
+				(s.latex ?? []).some((l) => l.startsWith('R_{th} = \\frac{V_{oc}}{I_{sc}}'))
+			)
 		).toBe(true);
 
-		// 11b. CCCS circuit: V1=12V (N1->0), R1=4Ω (N1->N2), F1=2*I_R1 (0->N2), R2=6Ω (N2->0)
-		// Removing R2: I_R1 enters N2, F1=2*I_R1 enters N2 => 3*I_R1 = 0 => I_R1 = 0 => V_th = 12 V!
-		// Test source I_test=1A into N2 with V1=0:
-		// I_R1 = -V2/4 (from N1=0 to N2), F1 = 2*I_R1 = -V2/2 (from 0 to N2)
-		// KCL at N2: V2/4 - (-V2/2) = 1 => (3/4)*V2 = 1 => R_th = 4/3 Ω!
+		// 11b. CCCS circuit: V1=12V (A->0), R1=4Ω (A->B), F1=2*I_R1 (0->B), R2=6Ω (B->0)
+		// Removing R2: I_R1 enters B, F1=2*I_R1 enters B => 3*I_R1 = 0 => I_R1 = 0 => V_th = 12 V!
+		// Test source I_test=1A into B with V1=0:
+		// I_R1 = -V2/4 (from A=0 to B), F1 = 2*I_R1 = -V2/2 (from 0 to B)
+		// KCL at B: V2/4 - (-V2/2) = 1 => (3/4)*V2 = 1 => R_th = 4/3 Ω!
 		// Reconnect R2=6Ω: I_R2 = 12 / (4/3 + 6) = 12 / (22/3) = 18/11 A, V_R2 = 108/11 V!
 		const cccsDoc: CircuitDocument = {
 			schemaVersion: 1,

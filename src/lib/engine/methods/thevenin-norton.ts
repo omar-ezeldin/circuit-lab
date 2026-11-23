@@ -6,13 +6,13 @@
  *   - `{ kind: 'terminals', nodeA, nodeB }`
  *   - Auto-detection of `'terminal'` components (`A`, `B`) or last passive load resistor
  *
- * Computes V_th (open-circuit voltage), Z_th (1 A test-source with deactivated sources),
+ * Computes V_th (open-circuit voltage), Z_th (hidden 1 A test-source reference; shown as R_eq or V_oc/I_sc when the course method applies),
  * I_N (short-circuit current = V_th / Z_th), load current/voltage verification vs MNA (< 1e-8),
  * and Maximum Power Transfer theorem (Z_L,opt = Z_th*, P_max).
  */
 
 import { Complex } from '../complex';
-import { buildElectricalGraph } from '../graph';
+import { buildElectricalGraph, latexNodeId } from '../graph';
 import { solveMNA } from '../mna';
 import {
 	isDependentSourceKind,
@@ -28,12 +28,59 @@ import {
 import {
 	buildDeactivatedDocument,
 	buildPortTestWires,
+	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
 	latexSub,
 	MNA_VERIFICATION_TOL,
 	remapDependentControlNodes
 } from './shared';
+import {
+	reduceSeriesParallel,
+	reqLatex,
+	type SpEdge,
+	type SpReduction
+} from './sp-reduce';
+
+const PASSIVE_KINDS = new Set(['resistor', 'capacitor', 'inductor']);
+
+/** Equal within 1e-6 relative (plus a tiny absolute floor for zeros). */
+function closeTo(a: Complex, b: Complex): boolean {
+	return a.sub(b).abs() <= 1e-6 * Math.max(a.abs(), b.abs()) + 1e-12;
+}
+
+/**
+ * Series-parallel reduction of the killed network seen from A-B (independent sources only).
+ * Killed voltage sources are wires, killed current sources are dropped (open).
+ */
+function reduceKilledNetwork(
+	killedDoc: CircuitDocument,
+	graph: ReturnType<typeof buildElectricalGraph>,
+	mode: CircuitDocument['mode'],
+	freq: number,
+	ports: [string, string]
+): SpReduction | undefined {
+	const edges: SpEdge[] = [];
+	const shorts: Array<[string, string]> = [];
+	for (const comp of killedDoc.components) {
+		const nodes = graph.componentNodes[comp.id];
+		if (!nodes || nodes.length < 2) continue;
+		if (PASSIVE_KINDS.has(comp.kind)) {
+			const z = getPassiveImpedance(comp, mode, freq);
+			edges.push({
+				id: comp.id,
+				label: comp.label,
+				...(comp.kind === 'resistor' ? {} : { name: `Z_{${latexSub(comp.label)}}` }),
+				nodeA: nodes[0],
+				nodeB: nodes[1],
+				z: z ?? Complex.from(Infinity, 0)
+			});
+		} else if (comp.kind === 'voltage_source') {
+			shorts.push([nodes[0], nodes[1]]);
+		}
+	}
+	return reduceSeriesParallel({ edges, shorts, ports });
+}
 
 function mapOriginalNodeToSubGraph(
 	origGraph: ReturnType<typeof buildElectricalGraph>,
@@ -144,6 +191,8 @@ export function solveTheveninNorton(
 	const origGraph = buildElectricalGraph(doc);
 	const mode = mna.mode;
 	const freq = mna.frequencyHz;
+	// Course notation: R in DC, Z in AC.
+	const Z = mode === 'dc' ? 'R' : 'Z';
 
 	let loadComp: CircuitComponent | undefined;
 	let origNodeA: string;
@@ -320,6 +369,72 @@ export function solveTheveninNorton(
 		}
 	}
 
+	// Course methods (display only; the test-source zth above stays the reference value).
+	//   case 1: independent sources only -> kill them, R_th = R_eq by series/parallel
+	//   case 2: independent + dependent  -> R_th = V_oc / I_sc (short A-B)
+	//   case 3: dependent sources only   -> test source (the value computed above)
+	const hasIndependent = openDoc.components.some(
+		(c) => c.kind === 'voltage_source' || c.kind === 'current_source'
+	);
+	let reqReduction: SpReduction | undefined;
+	let iscShort: Complex | null = null;
+	if (zth !== null && dependentSources.length === 0) {
+		try {
+			const red = reduceKilledNetwork(deactivatedDoc, openGraph, mode, freq, [
+				openNodeA,
+				openNodeB
+			]);
+			if (red?.ok && red.root && closeTo(red.root.z, zth)) reqReduction = red;
+		} catch {
+			reqReduction = undefined;
+		}
+	} else if (zth !== null && hasIndependent && dependentSources.length > 0) {
+		try {
+			// 0 V source across A-B (pin0 + at A, pin1 - at B): its branch current runs A -> B
+			// through the short, which is exactly I_sc.
+			const shortComp: CircuitComponent = {
+				id: '__thevenin_isc__',
+				kind: 'voltage_source',
+				label: 'V_short',
+				x: 1000003,
+				y: 1000019,
+				rotation: 0,
+				value: '0'
+			};
+			const shortDoc: CircuitDocument = remapDependentControlNodes(openGraph, {
+				...openDoc,
+				components: [...openDoc.components, shortComp],
+				wires: [
+					...openDoc.wires,
+					...buildPortTestWires(
+						'__thevenin_sc_',
+						{ x: 1000001, y: 1000019 },
+						ptA,
+						{ x: 1000005, y: 1000019 },
+						ptB
+					)
+				]
+			});
+			const shortSol = solveMNA(shortDoc, {
+				frequencyHz: freq,
+				acMagnitudeMode: mna.acMagnitudeMode
+			});
+			const br = shortSol.valid ? shortSol.branches[shortComp.id] : undefined;
+			if (br) {
+				const i = br.current;
+				if (
+					i.abs() > 1e-12 &&
+					vth.abs() > 1e-12 &&
+					closeTo(vth.div(i), zth)
+				) {
+					iscShort = i;
+				}
+			}
+		} catch {
+			iscShort = null;
+		}
+	}
+
 	// 3. Norton Short-Circuit Current I_N
 	let isc: Complex | null = null;
 	if (zth !== null) {
@@ -376,7 +491,7 @@ export function solveTheveninNorton(
 
 		const sub = latexSub(loadComp.label);
 		verifyLatex.push(
-			`I_{${sub}} = \\frac{V_{th}}{Z_{th} + Z_{${sub}}} = ${formatLatexValue(iLoad, mode)}\\text{ A}`,
+			`I_{${sub}} = \\frac{V_{th}}{${Z}_{th} + ${Z}_{L}} = ${formatLatexValue(iLoad, mode)}\\text{ A}`,
 			`V_{${sub}} = ${formatLatexValue(vLoad, mode)}\\text{ V}`
 		);
 	} else {
@@ -397,48 +512,105 @@ export function solveTheveninNorton(
 		const vMag = vth.abs();
 		const maxRealPowerW = (powerScale * vMag * vMag) / (4 * zth.re);
 		maxPowerTransfer = { optimalLoadImpedance, maxRealPowerW };
-		maxPowerLatex.push(
-			`${mode === 'dc' ? 'R' : 'Z'}_{L,\\text{opt}} = ${formatLatexValue(optimalLoadImpedance, mode)}\\;\\Omega`,
-			`P_{\\max} = ${formatLatexValue(Complex.from(maxRealPowerW, 0), mode)}\\text{ W}`
-		);
+		const pmax = formatLatexValue(Complex.from(maxRealPowerW, 0), mode);
+		if (mode === 'dc') {
+			maxPowerLatex.push(
+				`R_{L} = R_{th} = ${formatLatexValue(optimalLoadImpedance, mode)}\\;\\Omega`,
+				`P_{\\max} = \\frac{V_{th}^2}{4R_{th}} = \\frac{${formatLatexTerm(vth, mode)}^2}{4 \\cdot ${formatLatexTerm(zth, mode)}} = ${pmax}\\text{ W}`
+			);
+		} else {
+			maxPowerLatex.push(
+				`Z_{L} = Z_{th}^{*} = ${formatLatexValue(optimalLoadImpedance, mode)}\\;\\Omega`,
+				`P_{\\max} = ${pmax}\\text{ W}`
+			);
+		}
 	}
+
+	// Step 3: Thevenin resistance / impedance, shown the course way when it applies.
+	const thName = `${Z}_{th}`;
+	const zthTitle = mode === 'dc' ? 'Thevenin Resistance (R_th)' : 'Thevenin Impedance (Z_th)';
+	const testWord = usedVoltageTestSource ? '1 V test voltage source' : '1 A test current source';
+	const testLine =
+		zth !== null
+			? `${thName} = \\frac{V_{test}}{I_{test}} = ${formatLatexValue(zth, mode)}\\;\\Omega`
+			: `${thName} = \\infty\\;\\Omega\\;(\\text{open port})`;
+
+	let zthDescription: string;
+	let zthLatex: string[];
+	if (reqReduction?.root) {
+		const killed: string[] = [];
+		for (const c of openDoc.components) {
+			if (c.kind === 'voltage_source') killed.push(`\\text{${latexSub(c.label)} off} \\to \\text{short}`);
+			else if (c.kind === 'current_source')
+				killed.push(`\\text{${latexSub(c.label)} off} \\to \\text{open}`);
+		}
+		zthDescription = `Turn off the independent sources (voltage sources become shorts, current sources become open circuits), then combine the ${mode === 'dc' ? 'resistors' : 'impedances'} seen from the terminals in series and parallel.`;
+		zthLatex = [];
+		if (killed.length > 0) zthLatex.push(killed.join(',\\; '));
+		if (reqReduction.dangling.length > 0) {
+			const names = reqReduction.dangling.map((e) => latexSub(e.label)).join(', ');
+			zthLatex.push(
+				`\\text{${names} ${reqReduction.dangling.length > 1 ? 'carry' : 'carries'} no current}`
+			);
+		}
+		zthLatex.push(reqLatex(reqReduction.root, mode, thName));
+	} else if (iscShort !== null && zth !== null) {
+		zthDescription = `This circuit has both independent and dependent sources, so short the terminals and find the short-circuit current I_sc. Then ${Z}_th = V_oc / I_sc, with V_oc = V_th from step 2.`;
+		zthLatex = [
+			`I_{sc} = ${formatLatexValue(iscShort, mode)}\\text{ A}`,
+			`${thName} = \\frac{V_{oc}}{I_{sc}} = \\frac{${formatLatexValue(vth, mode)}}{${formatLatexValue(iscShort, mode)}} = ${formatLatexValue(zth, mode)}\\;\\Omega`
+		];
+	} else {
+		if (dependentSources.length > 0 && !hasIndependent) {
+			zthDescription = `The only sources are dependent, so there is nothing to turn off. Apply a ${testWord} at the terminals and find ${Z}_th = V_test / I_test.`;
+		} else if (dependentSources.length > 0) {
+			zthDescription = `Turn off the independent sources and keep the dependent source(s) (${dependentSources.map((d) => d.label).join(', ')}). Apply a ${testWord} at the terminals and find ${Z}_th = V_test / I_test.`;
+		} else {
+			zthDescription = `This network isn't series–parallel, so apply a ${testWord} at the terminals:`;
+		}
+		zthLatex = [testLine];
+	}
+
+	const iscFromShort = iscShort !== null && reqReduction === undefined;
+	const nortonLine =
+		isc !== null && zth !== null && !zth.isZero(1e-12)
+			? `I_N = \\frac{V_{th}}{${thName}} = \\frac{${formatLatexValue(vth, mode)}}{${formatLatexValue(zth, mode)}} = ${formatLatexValue(isc, mode)}\\text{ A}`
+			: isc !== null
+				? `I_N = ${formatLatexValue(isc, mode)}\\text{ A}`
+				: `I_N = \\infty\\text{ A}\\;(\\text{ideal zero-impedance source})`;
 
 	const steps: SolutionStep[] = [
 		{
-			title: '1. Port Selection & Load Removal',
+			title: '1. Remove the Load',
 			description: loadComp
-				? `Removed load component ${loadComp.label} to expose open terminals A (${origNodeA}) and B (${origNodeB}).`
-				: `Selected open port terminals A (${origNodeA}) and B (${origNodeB}).`,
+				? `Remove the load ${loadComp.label}. Its ends are the open terminals, nodes ${origNodeA} and ${origNodeB}.`
+				: `The open terminals are nodes ${origNodeA} and ${origNodeB}.`,
 			highlightIds: loadComp ? [loadComp.id] : undefined
 		},
 		{
 			title: '2. Open-Circuit Voltage (V_th)',
-			description: 'Solved open-circuit network for V_th = V_A - V_B.',
-			latex: [`V_{th} = V_{${origNodeA}} - V_{${origNodeB}} = ${formatLatexValue(vth, mode)}\\text{ V}`]
+			description: 'Remove the load and find the voltage across the terminals.',
+			latex: [
+				`V_{th} = V_{${latexNodeId(origNodeA)}} - V_{${latexNodeId(origNodeB)}} = ${formatLatexValue(vth, mode)}\\text{ V}`
+			]
 		},
 		{
-			title:
-				dependentSources.length > 0
-					? '3. Equivalent Impedance (Z_th — Test-Source Method) & Norton Current (I_N)'
-					: '3. Equivalent Impedance (Z_th) & Norton Current (I_N)',
-			description:
-				dependentSources.length > 0
-					? `Deactivated ONLY independent sources while keeping dependent source(s) (${dependentSources.map((d) => d.label).join(', ')}) active. Applied a ${usedVoltageTestSource ? '1 V test voltage source across A–B' : '1 A test current source from B to A'} to compute Z_th = V_test / I_test.`
-					: `Deactivated all independent sources and applied a ${usedVoltageTestSource ? '1 V test voltage source across A–B' : '1 A test source from B to A'} to find Z_th = V_test / I_test.`,
-			latex: [
-				zth !== null
-					? `Z_{th} = \\frac{V_{\\text{test}}}{I_{\\text{test}}} = ${formatLatexValue(zth, mode)}\\;\\Omega`
-					: `Z_{th} = \\infty\\;\\Omega\\;(\\text{open port})`,
-				isc !== null
-					? `I_N = \\frac{V_{th}}{Z_{th}} = ${formatLatexValue(isc, mode)}\\text{ A}`
-					: `I_N = \\infty\\text{ A}\\;(\\text{ideal zero-impedance source})`
-			]
+			title: `3. ${zthTitle}`,
+			description: zthDescription,
+			latex: zthLatex
+		},
+		{
+			title: '4. Norton Current (I_N)',
+			description: iscFromShort
+				? `The Norton current is the short-circuit current, I_N = I_sc = V_th / ${Z}_th.`
+				: `The Norton current is I_N = V_th / ${Z}_th.`,
+			latex: [nortonLine]
 		}
 	];
 
 	if (verifyLatex.length > 0) {
 		steps.push({
-			title: '4. Reconnect Load & Verify',
+			title: '5. Reconnect the Load',
 			description: `Reconnected ${loadComp!.label} to the Thévenin equivalent and checked the result against the full circuit solution.`,
 			latex: verifyLatex
 		});
@@ -446,15 +618,18 @@ export function solveTheveninNorton(
 
 	if (maxPowerLatex.length > 0) {
 		steps.push({
-			title: `${verifyLatex.length > 0 ? '5' : '4'}. Maximum Power Transfer`,
-			description: 'Maximum real power is delivered when the load equals the complex conjugate Z_th*.',
+			title: `${steps.length + 1}. Maximum Power Transfer`,
+			description:
+				mode === 'dc'
+					? 'Maximum power is delivered when the load equals the Thévenin resistance.'
+					: 'Maximum real power is delivered when the load equals the complex conjugate Z_th*.',
 			latex: maxPowerLatex
 		});
 	}
 
 	const summaryParts = [
 		`V_{th} &= ${formatLatexValue(vth, mode)}\\text{ V}`,
-		zth !== null ? `Z_{th} &= ${formatLatexValue(zth, mode)}\\;\\Omega` : 'Z_{th} &= \\infty',
+		zth !== null ? `${thName} &= ${formatLatexValue(zth, mode)}\\;\\Omega` : `${thName} &= \\infty`,
 		isc !== null ? `I_N &= ${formatLatexValue(isc, mode)}\\text{ A}` : 'I_N &= \\infty'
 	];
 

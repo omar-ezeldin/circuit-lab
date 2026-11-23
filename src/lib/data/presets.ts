@@ -68,7 +68,7 @@ export const PRESETS: CircuitPreset[] = [
 		category: 'dc',
 		featuredMethod: 'nodal',
 		description:
-			'Floating 12 V voltage source bridging nodes N1 and N2, driven by a 6 A current source (V1 = 16 V, V2 = 4 V).',
+			'Floating 12 V voltage source bridging nodes A and B, driven by a 6 A current source (V1 = 16 V, V2 = 4 V).',
 		theveninLoadId: 'R3',
 		document: {
 			schemaVersion: 1,
@@ -335,7 +335,7 @@ export const PRESETS: CircuitPreset[] = [
 		category: 'ac',
 		featuredMethod: 'nodal',
 		description:
-			'Phasor-domain AC supernode network with direct reactance impedances (-j1 Ω capacitors, j1 Ω inductor) and a floating 10∠0° V source bridging nodes N2 and N3.',
+			'Phasor-domain AC supernode network with direct reactance impedances (-j1 Ω capacitors, j1 Ω inductor) and a floating 10∠0° V source bridging nodes B and C.',
 		theveninLoadId: 'R3',
 		document: {
 			schemaVersion: 1,

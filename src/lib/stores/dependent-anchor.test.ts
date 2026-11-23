@@ -27,7 +27,7 @@ describe('dependent-source control nodes', () => {
 		const iBefore = circuit.solution.mna.branches[g.id].current.re;
 		expect(Math.abs(iBefore)).toBeGreaterThan(0);
 
-		// An unrelated part above everything becomes the topmost node and renumbers N1, N2, ...
+		// An unrelated part above everything becomes the topmost node and renumbers A, B, ...
 		circuit.addComponent('resistor', 4, -10);
 		const nodeAfter = circuit.graph.componentNodes['R2'][0];
 		expect(nodeAfter).not.toBe(ctrlNode);

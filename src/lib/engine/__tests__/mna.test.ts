@@ -53,7 +53,7 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 
 	// 2. DC Current Divider
 	it('2. DC Current Divider (6A, 3Ω || 6Ω -> 12V, 4A, 2A)', () => {
-		// I1: (0,4) rot 270 -> in:(0,6) [gnd], out:(0,2) [N1] (pushes 6A into N1)
+		// I1: (0,4) rot 270 -> in:(0,6) [gnd], out:(0,2) [A] (pushes 6A into A)
 		// R1: (4,4) rot 90 -> a:(4,2), b:(4,6)
 		// R2: (8,4) rot 90 -> a:(8,2), b:(8,6)
 		const doc: CircuitDocument = {
@@ -142,13 +142,13 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 
 	// 5. Multi-source DC Supernode Circuit
 	it('5. Multi-source DC Supernode (V1=10V, floating V2=6V, I1=3A -> 108/11 V, 42/11 V)', () => {
-		// N1 at (0,0), N2 at (4,0), N3 at (8,0), Gnd at y=4
-		// V1: (0,2) rot 90 -> +:(0,0)[N1], -:(0,4)[0]
-		// R1: (2,0) rot 0 -> a:(0,0)[N1], b:(4,0)[N2]
-		// R2: (4,2) rot 90 -> a:(4,0)[N2], b:(4,4)[0]
-		// V2: (6,0) rot 0 -> +:(4,0)[N2], -:(8,0)[N3]
-		// R3: (8,2) rot 90 -> a:(8,0)[N3], b:(8,4)[0]
-		// I1: (12,2) rot 270 -> in:(12,4)[0], out:(12,0)[N3]
+		// A at (0,0), B at (4,0), C at (8,0), Gnd at y=4
+		// V1: (0,2) rot 90 -> +:(0,0)[A], -:(0,4)[0]
+		// R1: (2,0) rot 0 -> a:(0,0)[A], b:(4,0)[B]
+		// R2: (4,2) rot 90 -> a:(4,0)[B], b:(4,4)[0]
+		// V2: (6,0) rot 0 -> +:(4,0)[B], -:(8,0)[C]
+		// R3: (8,2) rot 90 -> a:(8,0)[C], b:(8,4)[0]
+		// I1: (12,2) rot 270 -> in:(12,4)[0], out:(12,0)[C]
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -244,11 +244,11 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 			mode: 'dc',
 			frequencyHz: 60,
 			components: [
-				comp('I1', 'current_source', 0, 2, 270, '5'), // 0 -> N1
-				comp('R1', 'resistor', 4, 2, 90, '2'), // N1 -> 0
-				comp('R2', 'resistor', 6, 0, 0, '3'), // N1 -> N2
-				comp('R3', 'resistor', 8, 2, 90, '6'), // N2 -> 0
-				comp('I2', 'current_source', 12, 2, 90, '1'), // N2 -> 0
+				comp('I1', 'current_source', 0, 2, 270, '5'), // 0 -> A
+				comp('R1', 'resistor', 4, 2, 90, '2'), // A -> 0
+				comp('R2', 'resistor', 6, 0, 0, '3'), // A -> B
+				comp('R3', 'resistor', 8, 2, 90, '6'), // B -> 0
+				comp('I2', 'current_source', 12, 2, 90, '1'), // B -> 0
 				comp('G1', 'ground', 0, 4, 0, '0')
 			],
 			wires: [
@@ -372,7 +372,7 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 	});
 
 	// 12. Multi-source AC Phasor Circuit (10∠0° V and 5∠90° V)
-	it('12. Multi-source AC Phasor Circuit (10∠0° V and 5∠90° V -> V_N2 = 5 + j0 V)', () => {
+	it('12. Multi-source AC Phasor Circuit (10∠0° V and 5∠90° V -> V_B = 5 + j0 V)', () => {
 		const freq = 100 / (2 * Math.PI); // omega = 100
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
@@ -399,7 +399,7 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 	});
 
 	// 13. AC Mixed Voltage + Current Source Circuit
-	it('13. AC Mixed Voltage + Current Source (10∠0° V, j1 A -> V_N2 = 10 V)', () => {
+	it('13. AC Mixed Voltage + Current Source (10∠0° V, j1 A -> V_B = 10 V)', () => {
 		const freq = 1000 / (2 * Math.PI);
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
@@ -474,8 +474,8 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 		expect(sol.valid).toBe(true);
 		expect(sol.diagnostics.some((d) => d.code === 'AUTO_GROUND')).toBe(true);
 		// Auto-ground picks V1's negative pin (0,0)! So (0,4) is +12V, (4,0) is 0V?
-		// Wait: V1+ is (0,4), V1- is (0,0)='0'. R1 connects (0,0)[0] to (4,0)[N1]. R2 connects (4,0)[N1] to (4,4)[+12V].
-		// So V(N1) = 12 * 2k/(2k+4k) = 4V! And V_R2 = V(N1) - V(4,4) = 4 - 12 = -8V!
+		// Wait: V1+ is (0,4), V1- is (0,0)='0'. R1 connects (0,0)[0] to (4,0)[A]. R2 connects (4,0)[A] to (4,4)[+12V].
+		// So V(A) = 12 * 2k/(2k+4k) = 4V! And V_R2 = V(A) - V(4,4) = 4 - 12 = -8V!
 		expect(sol.branches['R2'].voltage.re).toBeCloseTo(-8, 9);
 		expect(sol.branches['R1'].voltage.re).toBeCloseTo(-4, 9);
 	});
@@ -633,7 +633,7 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 	it('19. Measures exact differential voltage with ideal voltmeter without disturbing currents or power balance', () => {
 		// Series DC circuit: V1 = 12 V across R1 = 1 Ω, R2 = 2 Ω, R3 = 3 Ω (I = 2 A)
 		// V(R1) = 2 V, V(R2) = 4 V, V(R3) = 6 V.
-		// VM1 spans across R1 + R2 -> V_VM1 = V_N1 - V_N3 = 12 - 6 = 6 V (= V_R1 + V_R2)
+		// VM1 spans across R1 + R2 -> V_VM1 = V_A - V_C = 12 - 6 = 6 V (= V_R1 + V_R2)
 		const baseDoc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -753,8 +753,8 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 
 	it('20. DC Dependent Sources (VCVS, VCCS, CCVS, CCCS): exact hand-calculated solutions, control modes, polarity & power balance', () => {
 		// 20a. VCVS with controlComponentId (and verify equivalent controlNodePos/Neg & controlPolarity: -1)
-		// V1=16V (N1->0), R1=4k (N1->N2), R2=4k (N2->0), R3=2k (N2->N3), E1=2*V_R1 (N3->0)
-		// Hand solution: V_N1=16V, V_N2=10V, V_N3=12V, V_R1=6V, I_R1=1.5mA, I_R2=2.5mA, I_R3=-1mA
+		// V1=16V (A->0), R1=4k (A->B), R2=4k (B->0), R3=2k (B->C), E1=2*V_R1 (C->0)
+		// Hand solution: V_A=16V, V_B=10V, V_C=12V, V_R1=6V, I_R1=1.5mA, I_R2=2.5mA, I_R3=-1mA
 		const vcvsDoc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -808,8 +808,8 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 		expect(vcvsNodesSol.branches['R2'].voltage.re).toBeCloseTo(10, 9);
 		expect(vcvsNodesSol.branches['E1'].voltage.re).toBeCloseTo(12, 9);
 
-		// 20b. VCCS (DC): V1=12V (N1->0), R1=4Ω (N1->N2), R2=6Ω (N2->0), G1=0.25*V_R1 (0->N2, rot=270 => pin0=0, pin1=N2)
-		// KCL at N2: (V2 - 12)/4 + V2/6 - 0.25*(12 - V2) = 0
+		// 20b. VCCS (DC): V1=12V (A->0), R1=4Ω (A->B), R2=6Ω (B->0), G1=0.25*V_R1 (0->B, rot=270 => pin0=0, pin1=B)
+		// KCL at B: (V2 - 12)/4 + V2/6 - 0.25*(12 - V2) = 0
 		// => (1/4 + 1/6 + 1/4) V2 = 3 + 3 = 6 => (2/3) V2 = 6 => V2 = 9 V, V_R1 = 3 V, I_G1 = 0.75 A
 		const vccsDoc: CircuitDocument = {
 			schemaVersion: 1,
@@ -838,10 +838,10 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 		expect(vccsSol.branches['R1'].voltage.re).toBeCloseTo(3, 9);
 		expect(vccsSol.branches['Gdep'].current.re).toBeCloseTo(0.75, 9);
 
-		// 20c. CCVS (DC): V1=12V (N1->0), R1=2Ω (N1->N2), R2=4Ω (N2->0), H1=2*I_R1 (N3->0), R3=4Ω (N2->N3)
-		// Hand: V_N3 = 2 * I_R1 = 2 * (12 - V2)/2 = 12 - V2.
-		// KCL at N2: (V2 - 12)/2 + V2/4 + (V2 - (12 - V2))/4 = 0
-		// *4: 2(V2 - 12) + V2 + (2V2 - 12) = 0 => 5 V2 = 36 => V2 = 7.2 V, I_R1 = 2.4 A, V_N3 = 4.8 V
+		// 20c. CCVS (DC): V1=12V (A->0), R1=2Ω (A->B), R2=4Ω (B->0), H1=2*I_R1 (C->0), R3=4Ω (B->C)
+		// Hand: V_C = 2 * I_R1 = 2 * (12 - V2)/2 = 12 - V2.
+		// KCL at B: (V2 - 12)/2 + V2/4 + (V2 - (12 - V2))/4 = 0
+		// *4: 2(V2 - 12) + V2 + (2V2 - 12) = 0 => 5 V2 = 36 => V2 = 7.2 V, I_R1 = 2.4 A, V_C = 4.8 V
 		const ccvsDoc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -871,8 +871,8 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 		expect(ccvsSol.branches['R1'].current.re).toBeCloseTo(2.4, 9);
 		expect(ccvsSol.branches['H1'].voltage.re).toBeCloseTo(4.8, 9);
 
-		// 20d. CCCS (DC): V1=12V (N1->0), R1=4Ω (N1->N2), R2=6Ω (N2->0), F1=2*I_R1 (0->N2)
-		// KCL at N2: (V2 - 12)/4 + V2/6 - 2*(12 - V2)/4 = 0
+		// 20d. CCCS (DC): V1=12V (A->0), R1=4Ω (A->B), R2=6Ω (B->0), F1=2*I_R1 (0->B)
+		// KCL at B: (V2 - 12)/4 + V2/6 - 2*(12 - V2)/4 = 0
 		// => (1/4 + 1/6 + 2/4) V2 = 3 + 6 = 9 => (11/12) V2 = 9 => V2 = 108/11 V
 		// I_R1 = (12 - 108/11)/4 = (24/11)/4 = 6/11 A, I_F1 = 12/11 A
 		const cccsDoc: CircuitDocument = {
@@ -904,20 +904,20 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 	});
 
 	it('21. AC Dependent Sources (VCVS, VCCS, CCVS, CCCS) with complex impedances & balanced complex power', () => {
-		// AC VCVS + reactive load: V1=10∠0° V, R1=2 Ω, C1=-j2 Ω (N2->0), L1=j2 Ω (N2->N3), E1=2*V_R1 (N3->0)
-		// Hand: V_N3 = 2*(10 - V2) = 20 - 2*V2
-		// KCL at N2: (V2 - 10)/2 + V2/(-j2) + (V2 - (20 - 2*V2))/(j2) = 0
+		// AC VCVS + reactive load: V1=10∠0° V, R1=2 Ω, C1=-j2 Ω (B->0), L1=j2 Ω (B->C), E1=2*V_R1 (C->0)
+		// Hand: V_C = 2*(10 - V2) = 20 - 2*V2
+		// KCL at B: (V2 - 10)/2 + V2/(-j2) + (V2 - (20 - 2*V2))/(j2) = 0
 		// *2: (V2 - 10) + j*V2 - j*(3*V2 - 20) = 0
 		// => (1 - j2)*V2 = 10 - j20 = 10*(1 - j2) => V2 = 10 V!
 		// Wait: V_R1 = 10 - 10 = 0 V! Let's make E1 = (1+j1)*V_R1 so V_R1 != 0:
 		// E1 = (1+j1)*(10 - V2) => KCL*2: (V2-10) + j*V2 + (-j)*(V2 - (1+j1)*(10-V2)) = 0
 		// => (V2 - 10) + j*(1+j1)*(10 - V2) = 0 => (V2 - 10)*(1 - (-1+j1)) = 0 -> still 10 unless C1 != -L1!
-		// Use R1=2 Ω, R2=4 Ω (N2->0), L1=j2 Ω (N2->N3), E1=2*V_R1 (N3->0):
-		// KCL at N2: (V2 - 10)/2 + V2/4 + (V2 - 2*(10 - V2))/(j2) = 0
+		// Use R1=2 Ω, R2=4 Ω (B->0), L1=j2 Ω (B->C), E1=2*V_R1 (C->0):
+		// KCL at B: (V2 - 10)/2 + V2/4 + (V2 - 2*(10 - V2))/(j2) = 0
 		// *4: 2(V2 - 10) + V2 - j2*(3*V2 - 20) = 0 => (3 - j6)*V2 = 20 - j40
 		// => V2 = (20 - j40)/(3 - j6) = 20/3 V! Let's use L1=j4 Ω instead:
 		// *4: 2(V2 - 10) + V2 - j*(3*V2 - 20) = 0 => (3 - j3)*V2 = 20 - j20 => V2 = 20/3 V (still real!).
-		// Use R1=2 Ω, C1=-j4 Ω (N2->0), R3=4 Ω (N2->N3), E1=2*V_R1 (N3->0):
+		// Use R1=2 Ω, C1=-j4 Ω (B->0), R3=4 Ω (B->C), E1=2*V_R1 (C->0):
 		// KCL*4: 2(V2 - 10) + j*V2 + (3*V2 - 20) = 0 => (5 + j1)*V2 = 40 => V2 = 40/(5 + j1)
 		const acVcvsDoc: CircuitDocument = {
 			schemaVersion: 1,
@@ -953,8 +953,8 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 				.abs()
 		).toBeLessThan(1e-11);
 
-		// AC CCCS with complex gain: V1=10∠0° V, R1=2 Ω, L1=j2 Ω (N2->0), F1=(1+j1)*I_R1 (0->N2)
-		// KCL at N2: (V2 - 10)/2 + V2/(j2) - (1+j1)*(10 - V2)/2 = 0
+		// AC CCCS with complex gain: V1=10∠0° V, R1=2 Ω, L1=j2 Ω (B->0), F1=(1+j1)*I_R1 (0->B)
+		// KCL at B: (V2 - 10)/2 + V2/(j2) - (1+j1)*(10 - V2)/2 = 0
 		// *2: (V2 - 10) - j*V2 + (1+j1)*(V2 - 10) = 0
 		// => (2 + j0)*V2 = (2 + j1)*10 => V2 = 10 + j5 V!
 		const acCccsDoc: CircuitDocument = {

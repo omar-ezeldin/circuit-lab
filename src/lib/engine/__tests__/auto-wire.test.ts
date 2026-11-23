@@ -109,7 +109,7 @@ describe('algorithmic autoWireDocument', () => {
 		expect(Math.abs(mna.branches['R2'].current.re)).toBeCloseTo(0.002, 6);
 	});
 
-	it('reconstructs Preset 1 (dc-divider) from zero wires with exact N1 = 12 V and N2 = 8 V', () => {
+	it('reconstructs Preset 1 (dc-divider) from zero wires with exact A = 12 V and B = 8 V', () => {
 		const preset = getPresetById('dc-divider')!;
 		const unwired = stripWires(preset.document);
 
@@ -128,8 +128,8 @@ describe('algorithmic autoWireDocument', () => {
 			mna.diagnostics.filter((d) => d.code === 'FLOATING_SUBCIRCUIT' || d.code === 'SHORTED_COMPONENT')
 		).toHaveLength(0);
 
-		expect(mna.nodeVoltages['N1']?.voltage.re).toBeCloseTo(12, 6);
-		expect(mna.nodeVoltages['N2']?.voltage.re).toBeCloseTo(8, 6);
+		expect(mna.nodeVoltages['A']?.voltage.re).toBeCloseTo(12, 6);
+		expect(mna.nodeVoltages['B']?.voltage.re).toBeCloseTo(8, 6);
 	});
 
 	it('auto-wires parallel branches and multi-source presets (supernode, superposition, wheatstone, AC) into valid power-balanced circuits', () => {
@@ -242,8 +242,8 @@ describe('algorithmic autoWireDocument', () => {
 
 		const mna = solveMNA(wired);
 		expect(mna.valid).toBe(true);
-		expect(mna.nodeVoltages['N1']?.voltage.re).toBeCloseTo(12, 6);
-		expect(mna.nodeVoltages['N2']?.voltage.re).toBeCloseTo(8, 6);
+		expect(mna.nodeVoltages['A']?.voltage.re).toBeCloseTo(12, 6);
+		expect(mna.nodeVoltages['B']?.voltage.re).toBeCloseTo(8, 6);
 	});
 
 	it('is idempotent on already-connected Preset 1 and all other presets', () => {

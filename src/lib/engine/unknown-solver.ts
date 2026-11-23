@@ -16,7 +16,7 @@
  */
 
 import { Complex } from './complex';
-import { buildElectricalGraph, isImpedanceSpecified } from './graph';
+import { buildElectricalGraph, isImpedanceSpecified, latexNodeId } from './graph';
 import {
 	buildDeactivatedDocument,
 	buildPortTestWires,
@@ -463,7 +463,7 @@ function getConstraintSymbolLatex(
 		return formatSymbolLatex(constraint.label.trim());
 	}
 	if (constraint.kind === 'node_voltage') {
-		return `V_{${latexSub(constraint.targetId)}}`;
+		return `V_{${latexNodeId(constraint.targetId)}}`;
 	}
 	const targetComp = doc.components.find((c) => c.id === constraint.targetId);
 	const sub = latexSub(targetComp?.label ?? constraint.targetId);
@@ -1219,7 +1219,7 @@ function measureOnOpenCircuit(
 	compId: string,
 	vth: Complex
 ): Complex | null {
-	if (constraint.targetId === compId) {
+	if (constraint.kind !== 'node_voltage' && constraint.targetId === compId) {
 		if (constraint.kind === 'branch_voltage') return vth;
 		if (constraint.kind === 'branch_current') return Complex.zero();
 		return null;

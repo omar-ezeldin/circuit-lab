@@ -501,7 +501,7 @@
 
 	function pickDefaultTargetForKind(kind: ConstraintKind, unknownCompId: string): string {
 		if (kind === 'node_voltage') {
-			return circuit.graph.nonRefNodeIds[0] ?? 'N1';
+			return circuit.graph.nonRefNodeIds[0] ?? 'A';
 		}
 		const otherResistor = twoTerminalComponents.find(
 			(c) => c.id !== unknownCompId && c.kind === 'resistor'

@@ -19,7 +19,8 @@ import {
 	parseDependentGain,
 	parseSourceValue,
 	resolveDependentControlNodes,
-	validateCircuitTopology
+	validateCircuitTopology,
+	latexNodeId
 } from './graph';
 import { solveComplexLinearSystem } from './linalg';
 import {
@@ -745,7 +746,7 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 	const balanced = Math.abs(totalRealPower) < tol && Math.abs(totalReactivePower) < tol;
 
 	const unknownLabels = [
-		...nodeOrder.map((nid) => `V_{${nid}}`),
+		...nodeOrder.map((nid) => `V_{${latexNodeId(nid)}}`),
 		...voltageBranches.map((c) => `I_{${c.label}}`)
 	];
 

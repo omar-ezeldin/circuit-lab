@@ -202,11 +202,11 @@ describe('circuit reactive store', () => {
 		// Loading a non-empty document resets emptyBannerDismissed and applies TheveninTarget
 		circuit.loadDocument(PRESETS[0].document, {
 			kind: 'terminals',
-			nodeA: 'N1',
+			nodeA: 'A',
 			nodeB: '0'
 		});
 		expect(circuit.emptyBannerDismissed).toBe(false);
-		expect(circuit.theveninTarget).toMatchObject({ kind: 'terminals', nodeA: 'N1', nodeB: '0' });
+		expect(circuit.theveninTarget).toMatchObject({ kind: 'terminals', nodeA: 'A', nodeB: '0' });
 
 		// Loading with component TheveninTarget
 		circuit.loadDocument(PRESETS[0].document, {
@@ -327,7 +327,7 @@ describe('circuit reactive store', () => {
 		const groundNode = circuit.graph.componentNodes['G1'][0];
 		circuit.setTheveninTerminals(nodeBefore, groundNode);
 
-		// A part placed above everything becomes the topmost node and shifts N1, N2, ...
+		// A part placed above everything becomes the topmost node and shifts A, B, ...
 		circuit.addComponent('resistor', 4, -10);
 		const nodeAfter = circuit.graph.componentNodes['R3'][0];
 		expect(nodeAfter).not.toBe(nodeBefore);

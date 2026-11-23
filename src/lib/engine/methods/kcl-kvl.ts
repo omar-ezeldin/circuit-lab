@@ -15,7 +15,8 @@ import {
 	buildElectricalGraph,
 	parseDependentGain,
 	parseSourceValue,
-	resolveDependentControlNodes
+	resolveDependentControlNodes,
+	latexNodeId
 } from '../graph';
 import { solveComplexLinearSystem } from '../linalg';
 import {
@@ -319,7 +320,7 @@ export function solveKclKvl(doc: CircuitDocument, mna: MnaSolution): MethodResul
 		});
 
 		const resStr = residual.isZero(1e-9) ? '0' : formatLatexValue(residual, mode);
-		const symLine = `&\\text{Node } ${nid}:\\; ${sym} = 0`;
+		const symLine = `&\\text{Node } ${latexNodeId(nid)}:\\;${sym} = 0`;
 		const numLines = formatJoinedLines(numTermArr, mode === 'ac' ? 2 : 3);
 		const rhsBlock = numLines
 			.map((line, i) => (i === 0 ? `&\\implies ${line}` : `&\\quad ${line}`))

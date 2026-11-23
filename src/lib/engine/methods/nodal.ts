@@ -16,7 +16,8 @@ import {
 	buildElectricalGraph,
 	parseDependentGain,
 	parseSourceValue,
-	resolveDependentControlNodes
+	resolveDependentControlNodes,
+	latexNodeId
 } from '../graph';
 import { solveComplexLinearSystem } from '../linalg';
 import {
@@ -342,7 +343,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		if (cb.voltage !== null) {
 			b[targetRow] = b[targetRow].add(cb.voltage);
 			kclLatex.push(
-				`\\text{Supernode (${latexSub(cb.comp.label)}):}\\; V_{${cb.nodeA}} - V_{${cb.nodeB}} = ${formatLatexValue(cb.voltage, mode)}`
+				`\\text{Supernode (${latexSub(cb.comp.label)}):}\\; V_{${latexNodeId(cb.nodeA)}} - V_{${latexNodeId(cb.nodeB)}} = ${formatLatexValue(cb.voltage, mode)}`
 			);
 			return true;
 		}
@@ -365,8 +366,8 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		// V(nodeA) - V(nodeB) - depExpr = 0
 		stampExprIntoRow(targetRow, depExpr, -1);
 		const exprTex = formatDependentSourceExpr(cb.comp, doc, mode);
-		const vA = cb.nodeA === '0' ? '0' : `V_{${cb.nodeA}}`;
-		const vB = cb.nodeB === '0' ? '' : ` - V_{${cb.nodeB}}`;
+		const vA = cb.nodeA === '0' ? '0' : `V_{${latexNodeId(cb.nodeA)}}`;
+		const vB = cb.nodeB === '0' ? '' : ` - V_{${latexNodeId(cb.nodeB)}}`;
 		kclLatex.push(`\\text{Dependent source (${latexSub(cb.comp.label)}):}\\; ${vA}${vB} = ${exprTex}`);
 		return true;
 	};
@@ -424,23 +425,23 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 
 				const yTex = formatLatexTerm(y, mode);
 				if (outside === '0') {
-					eqTerms.push(`${yTex} V_{${inside}}`);
+					eqTerms.push(`${yTex} V_{${latexNodeId(inside)}}`);
 				} else if (knownVoltages.has(outside)) {
 					const vKnown = knownVoltages.get(outside)!;
 					const contrib = y.mul(vKnown);
 					b[row] = b[row].add(contrib);
-					eqTerms.push(`${yTex}(V_{${inside}} - ${formatLatexTerm(vKnown, mode)})`);
+					eqTerms.push(`${yTex}(V_{${latexNodeId(inside)}} - ${formatLatexTerm(vKnown, mode)})`);
 				} else {
 					const idxOut = unknownIdx.get(outside)!;
 					A[row][idxOut] = A[row][idxOut].sub(y);
-					eqTerms.push(`${yTex}(V_{${inside}} - V_{${outside}})`);
+					eqTerms.push(`${yTex}(V_{${latexNodeId(inside)}} - V_{${latexNodeId(outside)}})`);
 				}
 			}
 
 			const labelPrefix =
 				group.length > 1
-					? `\\text{Supernode } \\{${group.join(', ')}\\}:\\; `
-					: `\\text{Node } ${group[0]}:\\; `;
+					? `\\text{Supernode } \\{${group.map(latexNodeId).join(', ')}\\}:\\; `
+					: `\\text{Node } ${latexNodeId(group[0])}:\\; `;
 			if (eqTerms.length > 2) {
 				const cleanTerms = eqTerms.map((t, i) =>
 					i === 0 ? t.replace(/^\+\s*/, '') : t.startsWith('- ') || t.startsWith('+ ') ? t : `+ ${t}`
@@ -512,7 +513,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		solveDisplay = courseSolveDisplay(
 			A,
 			b,
-			unknownNodes.map((nid) => `V_{${nid}}`),
+			unknownNodes.map((nid) => `V_{${latexNodeId(nid)}}`),
 			'V',
 			mode
 		);
@@ -599,13 +600,13 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 	// Build Pedagogical Steps
 	const knownLatex = nonRefNodes
 		.filter((nid) => knownVoltages.has(nid))
-		.map((nid) => `V_{${nid}} = ${formatLatexValue(knownVoltages.get(nid)!, mode)}\\text{ V}`);
+		.map((nid) => `V_{${latexNodeId(nid)}} = ${formatLatexValue(knownVoltages.get(nid)!, mode)}\\text{ V}`);
 
 	const supernodeGroups = Array.from(supernodeMap.entries())
 		.filter(([root, g]) => root !== KNOWN_SENTINEL && g.length > 1)
 		.map(([, g]) => g);
 	const solvedLatex = nonRefNodes.map(
-		(nid) => `V_{${nid}} = ${formatLatexValue(nodeVoltages[nid], mode)}\\text{ V}`
+		(nid) => `V_{${latexNodeId(nid)}} = ${formatLatexValue(nodeVoltages[nid], mode)}\\text{ V}`
 	);
 
 	const steps: SolutionStep[] = [];
@@ -633,7 +634,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		steps.push({
 			title: `${stepNum++}. Supernode Identification`,
 			description: `Floating voltage sources join non-reference nodes into ${supernodeGroups.length} supernode(s).`,
-			latex: supernodeGroups.map((g) => `\\text{Supernode: } \\{${g.join(', ')}\\}`)
+			latex: supernodeGroups.map((g) => `\\text{Supernode: } \\{${g.map(latexNodeId).join(', ')}\\}`)
 		});
 	}
 

@@ -112,14 +112,14 @@ export type ConstraintKind = 'node_voltage' | 'branch_voltage' | 'branch_current
 
 export interface CircuitConstraint {
 	kind: ConstraintKind;
-	/** For node_voltage: nodeId (e.g. "N2"); for branch_*: componentId */
+	/** For node_voltage: nodeId (e.g. "B"); for branch_*: componentId */
 	targetId: string;
 	/** Target value string (e.g. "6", "2m", "12m", "10∠30°") */
 	value: string;
 	/** Optional display label (e.g. "V_o", "I_x", "P_R2") */
 	label?: string;
 	/**
-	 * For node_voltage: a component pin on the target node. Node IDs (N1, N2, ...) are renumbered
+	 * For node_voltage: a component pin on the target node. Node IDs (A, B, ...) are renumbered
 	 * whenever the layout changes, so the store re-resolves `targetId` from this pin before solving.
 	 */
 	targetPin?: PinAnchor;
@@ -202,6 +202,8 @@ export interface CircuitDocument {
 	components: CircuitComponent[];
 	wires: CircuitWire[];
 	unknownProblem?: UnknownProblemSpec;
+	/** Custom node names, each anchored by a pin on the node (node IDs are renumbered by layout). */
+	nodeNames?: Array<{ pin: PinAnchor; name: string }>;
 }
 
 export interface NetlistElement {

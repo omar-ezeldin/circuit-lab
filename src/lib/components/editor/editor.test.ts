@@ -927,7 +927,7 @@ describe('editor Svelte components SSR rendering', () => {
 		expect(populatedOut.body).toContain('data-component-id="R1"');
 		expect(populatedOut.body).toContain('data-symbol-standard="ieee"');
 		expect(populatedOut.body).toContain('Load (Thévenin)');
-		expect(populatedOut.body).toContain('N1:');
+		expect(populatedOut.body).toMatch(/>A: [^<]*V</);
 
 		settings.schematicStandard = 'iec';
 		const iecOut = render(SchematicCanvas);
@@ -1109,7 +1109,7 @@ describe('editor Svelte components SSR rendering', () => {
 			terms: [{ componentId: acSource.id, multiplier: 1 }],
 			constraint: {
 				kind: 'node_voltage',
-				targetId: circuit.graph.nonRefNodeIds[0] ?? 'N1',
+				targetId: circuit.graph.nonRefNodeIds[0] ?? 'A',
 				value: '50<-30'
 			}
 		});
@@ -1176,7 +1176,7 @@ describe('editor Svelte components SSR rendering', () => {
 		expect(openInspector.body).not.toContain('id="comp-unknown-toggle"');
 		expect(openInspector.body).not.toContain('Analyze Thévenin / Norton Across Element');
 
-		// Wire VM1 across R1: +:(6,0)->(4,4)[N1=12V], -:(10,0)->(12,4)[N2=8V] => reads +4 V
+		// Wire VM1 across R1: +:(6,0)->(4,4)[A=12V], -:(10,0)->(12,4)[B=8V] => reads +4 V
 		circuit.addWire([
 			{ x: 6, y: 0 },
 			{ x: 4, y: 0 },
@@ -1264,10 +1264,10 @@ describe('editor Svelte components SSR rendering', () => {
 			rotation: 90,
 			value: '1m',
 			unit: 'S',
-			controlRef: { controlNodePos: 'N1', controlNodeNeg: '0', controlPolarity: 1 }
+			controlRef: { controlNodePos: 'A', controlNodeNeg: '0', controlPolarity: 1 }
 		};
 		expect(formatComponentDisplayValue(vccsNodes, 'dc', 'auto', [r1, vccsNodes])).toBe(
-			'1m·v(N1,0)'
+			'1m·v(A,0)'
 		);
 
 		const ccvsBranch: CircuitComponent = {
@@ -1356,14 +1356,14 @@ describe('editor Svelte components SSR rendering', () => {
 		expect(resultsOut.body).toContain('12 V');
 
 		// Switch E1 from component control to node control and verify mutual exclusivity + undo
-		circuit.updateComponentControlRef('E1', { controlNodePos: 'N1', controlNodeNeg: 'N2' });
+		circuit.updateComponentControlRef('E1', { controlNodePos: 'A', controlNodeNeg: 'B' });
 		expect(circuit.selectedComponent?.controlRef?.controlComponentId).toBeUndefined();
-		expect(circuit.selectedComponent?.controlRef?.controlNodePos).toBe('N1');
-		expect(circuit.selectedComponent?.controlRef?.controlNodeNeg).toBe('N2');
+		expect(circuit.selectedComponent?.controlRef?.controlNodePos).toBe('A');
+		expect(circuit.selectedComponent?.controlRef?.controlNodeNeg).toBe('B');
 
 		const nodeHighlightCanvas = render(SchematicCanvas);
 		expect(nodeHighlightCanvas.body).toContain('data-control-nodes-highlight="true"');
-		const nodeOverlayIdx = nodeHighlightCanvas.body.indexOf('N2: 10 V');
+		const nodeOverlayIdx = nodeHighlightCanvas.body.indexOf('B: 10 V');
 		const controlHighlightIdx = nodeHighlightCanvas.body.indexOf(
 			'data-control-nodes-highlight="true"'
 		);

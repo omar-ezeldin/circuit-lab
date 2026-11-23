@@ -32,10 +32,10 @@ const OMEGA_1000_HZ = 1000 / (2 * Math.PI);
 
 describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', () => {
 	it('1. DC unknown voltage source given branch current (I_R3 = 2mA -> exact V1 = 36V)', () => {
-		// V1: (0,4) rot 90 -> +:(0,2)[N1], -:(0,6)[0]
-		// R1: (2,2) rot 0 -> a:(0,2)[N1], b:(4,2)[N2], 6k
-		// R2: (4,4) rot 90 -> a:(4,2)[N2], b:(4,6)[0], 6k
-		// R3: (8,4) rot 90 -> a:(8,2)[N2], b:(8,6)[0], 6k
+		// V1: (0,4) rot 90 -> +:(0,2)[A], -:(0,6)[0]
+		// R1: (2,2) rot 0 -> a:(0,2)[A], b:(4,2)[B], 6k
+		// R2: (4,4) rot 90 -> a:(4,2)[B], b:(4,6)[0], 6k
+		// R3: (8,4) rot 90 -> a:(8,2)[B], b:(8,6)[0], 6k
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -101,8 +101,8 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('2. DC unknown voltage source given node voltage with nonzero offset y(0) != 0', () => {
-		// V1 (N1 -> 0), R1 = 2k (N1 -> N2), R2 = 2k (N2 -> 0), I1 = 3m (0 -> N2)
-		// V_N2 = 0.5 * V1 + 3 => V_N2 = 10 V gives V1 = 14 V
+		// V1 (A -> 0), R1 = 2k (A -> B), R2 = 2k (B -> 0), I1 = 3m (0 -> B)
+		// V_B = 0.5 * V1 + 3 => V_B = 10 V gives V1 = 14 V
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -120,7 +120,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		const res = solveUnknownParameter(doc, {
 			componentId: 'V1',
 			symbol: 'V',
-			constraint: { kind: 'node_voltage', targetId: 'N2', value: '10' }
+			constraint: { kind: 'node_voltage', targetId: 'B', value: '10' }
 		});
 
 		expect(res.valid).toBe(true);
@@ -158,8 +158,8 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('4. DC unknown resistor given node voltage & branch current (exact Möbius inversion)', () => {
-		// Ladder: V1 = 20V (N1->0), R1 = 10 (N1->N2), Rx (N2->0), R2 = 10 (N2->N3), R3 = 10 (N3->0)
-		// When Rx = 20 Ω: V_N2 = 10 V, V_N3 = 5 V, I_R3 = 0.5 A
+		// Ladder: V1 = 20V (A->0), R1 = 10 (A->B), Rx (B->0), R2 = 10 (B->C), R3 = 10 (C->0)
+		// When Rx = 20 Ω: V_B = 10 V, V_C = 5 V, I_R3 = 0.5 A
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -178,7 +178,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		const byNodeV = solveUnknownParameter(doc, {
 			componentId: 'Rx',
 			symbol: 'Rx',
-			constraint: { kind: 'node_voltage', targetId: 'N3', value: '5' }
+			constraint: { kind: 'node_voltage', targetId: 'C', value: '5' }
 		});
 		expect(byNodeV.valid).toBe(true);
 		expect(byNodeV.solutions).toHaveLength(1);
@@ -250,8 +250,8 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('6. DC unknown voltage source given branch power (quadratic roots)', () => {
-		// V1 (N1->0), R1 = 2 (N1->N2), R2 = 2 (N2->0), I1 = 1 A (0->N2)
-		// V_N2 = 0.5*V1 + 1; P_R2 = V_N2^2 / 2 = 8 W => V_N2 = ±4 V => V1 = 6 V or -10 V
+		// V1 (A->0), R1 = 2 (A->B), R2 = 2 (B->0), I1 = 1 A (0->B)
+		// V_B = 0.5*V1 + 1; P_R2 = V_B^2 / 2 = 8 W => V_B = ±4 V => V1 = 6 V or -10 V
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -312,7 +312,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 
 	it('8. AC unknown inductor L and unknown capacitor C given target node voltage', () => {
 		// Series V1 = 10∠0° V, R1 = 100 Ω, L1 = ? at omega = 1000 rad/s
-		// Target V(N2) = 5+j5 V => Z_L = j100 Ω => L = 100 mH
+		// Target V(B) = 5+j5 V => Z_L = j100 Ω => L = 100 mH
 		const docL: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'ac',
@@ -330,7 +330,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		const resL = solveUnknownParameter(docL, {
 			componentId: 'L1',
 			symbol: 'Lx',
-			constraint: { kind: 'node_voltage', targetId: 'N2', value: '5+j5' }
+			constraint: { kind: 'node_voltage', targetId: 'B', value: '5+j5' }
 		});
 
 		expect(resL.valid).toBe(true);
@@ -340,7 +340,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		expect(resL.solutions[0].verified).toBe(true);
 
 		// Series V1 = 10∠0° V, R1 = 100 Ω, C1 = ? at omega = 1000 rad/s
-		// Target V(N2) = 5-j5 V => Z_C = -j100 Ω => C = 10 µF
+		// Target V(B) = 5-j5 V => Z_C = -j100 Ω => C = 10 µF
 		const docC: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'ac',
@@ -358,7 +358,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		const resC = solveUnknownParameter(docC, {
 			componentId: 'C1',
 			symbol: 'Cx',
-			constraint: { kind: 'node_voltage', targetId: 'N2', value: '5-j5' }
+			constraint: { kind: 'node_voltage', targetId: 'B', value: '5-j5' }
 		});
 
 		expect(resC.valid).toBe(true);
@@ -395,7 +395,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		expect(zeroSens.valid).toBe(false);
 		expect(zeroSens.error).toMatch(/independent|sensitivity k = 0/i);
 
-		// Unphysical resistor target: V_N2 = 15 V > 12 V supply
+		// Unphysical resistor target: V_B = 15 V > 12 V supply
 		const divider: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -410,7 +410,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		};
 		const negRes = solveUnknownParameter(divider, {
 			componentId: 'R2',
-			constraint: { kind: 'node_voltage', targetId: 'N2', value: '15' }
+			constraint: { kind: 'node_voltage', targetId: 'B', value: '15' }
 		});
 		expect(negRes.valid).toBe(false);
 		expect(negRes.error).toMatch(/non-positive|physical/i);
@@ -430,7 +430,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 		};
 		const dcCapRes = solveUnknownParameter(dcCap, {
 			componentId: 'C1',
-			constraint: { kind: 'node_voltage', targetId: 'N2', value: '6' }
+			constraint: { kind: 'node_voltage', targetId: 'B', value: '6' }
 		});
 		expect(dcCapRes.valid).toBe(false);
 		expect(dcCapRes.error).toMatch(/DC steady-state|AC mode/i);
@@ -533,11 +533,11 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('12. Multi-source DC: V1 = V and V2 = 2V given branch current I(R2) solves exact V and verifies all methods', () => {
-		// V1 (N1 -> 0) = V, R1 = 2k (N1 -> N2), R2 = 4k (N2 -> 0), R3 = 2k (N2 -> N3), V2 (N3 -> 0) = 2V
-		// KCL at N2: (V_N2 - V)/2k + V_N2/4k + (V_N2 - 2V)/2k = 0
-		// Multiply by 4k: 2(V_N2 - V) + V_N2 + 2(V_N2 - 2V) = 0 => 5 V_N2 = 6 V => V_N2 = 1.2 V
-		// I(R2) = V_N2 / 4k = 1.2 V / 4k = 0.3e-3 * V.
-		// Target I(R2) = 3mA => V = 10 V, V1 = 10 V, V2 = 20 V, V_N2 = 12 V.
+		// V1 (A -> 0) = V, R1 = 2k (A -> B), R2 = 4k (B -> 0), R3 = 2k (B -> C), V2 (C -> 0) = 2V
+		// KCL at B: (V_B - V)/2k + V_B/4k + (V_B - 2V)/2k = 0
+		// Multiply by 4k: 2(V_B - V) + V_B + 2(V_B - 2V) = 0 => 5 V_B = 6 V => V_B = 1.2 V
+		// I(R2) = V_B / 4k = 1.2 V / 4k = 0.3e-3 * V.
+		// Target I(R2) = 3mA => V = 10 V, V1 = 10 V, V2 = 20 V, V_B = 12 V.
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			name: 'Coupled Sources V and 2V',
@@ -583,8 +583,8 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('13. Multi-source DC with negative multiplier: V1 = V and V2 = -0.5V', () => {
-		// KCL at N2: 2(V_N2 - V) + V_N2 + 2(V_N2 - (-0.5V)) = 0 => 5 V_N2 = V => V_N2 = 0.2 V
-		// Target V_N2 = 4 V => V = 20 V, V1 = 20 V, V2 = -10 V.
+		// KCL at B: 2(V_B - V) + V_B + 2(V_B - (-0.5V)) = 0 => 5 V_B = V => V_B = 0.2 V
+		// Target V_B = 4 V => V = 20 V, V1 = 20 V, V2 = -10 V.
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
 			mode: 'dc',
@@ -618,7 +618,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('14. Multi-source DC current sources: I1 = I and I2 = 3I', () => {
-		// I1 (0 -> N1) = I, I2 (0 -> N1) = 3I, R1 = 1k (N1 -> 0)
+		// I1 (0 -> A) = I, I2 (0 -> A) = 3I, R1 = 1k (A -> 0)
 		// Total current through R1 = 4I => V(R1) = 4k * I. Target V(R1) = 8 V => I = 2 mA, I1 = 2 mA, I2 = 6 mA.
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
@@ -651,11 +651,11 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('15. AC phasor multi-source: V1 = V and V2 = 2V solves exact complex phasor', () => {
-		// V1 (N1 -> 0) = V, R1 = 100 (N1 -> N2), C1 = 10u (N2 -> 0) at ω = 1000 => Z_C = -j100
-		// R2 = 100 (N2 -> N3), V2 (N3 -> 0) = 2V
-		// KCL at N2: (V_N2 - V)/100 + V_N2/(-j100) + (V_N2 - 2V)/100 = 0
-		// => (2 + j) V_N2 = 3V => V_N2 = 3V / (2 + j).
-		// Choose V_target = 10∠30° => V_N2 = 3*(10∠30°)/(2+j). Setting V_N2_target = that yields exact V = 10∠30°!
+		// V1 (A -> 0) = V, R1 = 100 (A -> B), C1 = 10u (B -> 0) at ω = 1000 => Z_C = -j100
+		// R2 = 100 (B -> C), V2 (C -> 0) = 2V
+		// KCL at B: (V_B - V)/100 + V_B/(-j100) + (V_B - 2V)/100 = 0
+		// => (2 + j) V_B = 3V => V_B = 3V / (2 + j).
+		// Choose V_target = 10∠30° => V_B = 3*(10∠30°)/(2+j). Setting V_B_target = that yields exact V = 10∠30°!
 		const trueV = Complex.fromPolar(10, 30);
 		const targetVn2 = trueV.scale(3).div(Complex.from(2, 1));
 		const doc: CircuitDocument = {
@@ -736,9 +736,9 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 	});
 
 	it('17. Multi-term scaled passives: R1 = R and R2 = 2R solved to < 1e-8 via coupled parametric solver', () => {
-		// V1 = 12 V (N1 -> 0), R1 = R (N1 -> N2), R2 = 2R (N2 -> 0), R3 = 3k (N2 -> 0)
+		// V1 = 12 V (A -> 0), R1 = R (A -> B), R2 = 2R (B -> 0), R3 = 3k (B -> 0)
 		// R_eq = R + (2R || 3k).
-		// When R = 1.5k (1500 Ω): R1 = 1.5k, R2 = 3k, R2 || R3 = 1.5k => V(N2) = 12 * 1.5k / (1.5k + 1.5k) = 6 V!
+		// When R = 1.5k (1500 Ω): R1 = 1.5k, R2 = 3k, R2 || R3 = 1.5k => V(B) = 12 * 1.5k / (1.5k + 1.5k) = 6 V!
 		// And I(R1) = 12 / 3k = 4 mA!
 		const doc: CircuitDocument = {
 			schemaVersion: 1,
@@ -847,16 +847,16 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 
 		const baseline = solveCircuit(supernodeBase);
 		expect(baseline.mna.valid).toBe(true);
-		const vN2 = baseline.mna.nodeVoltages['N2'].voltage;
+		const vN2 = baseline.mna.nodeVoltages['B'].voltage;
 		const vN2Str = `${vN2.re}${vN2.im >= 0 ? '+j' : '-j'}${Math.abs(vN2.im)}`;
 
-		// 19a: Solve for unknown floating source Vs given V(N2) -> exact 10∠0° V
+		// 19a: Solve for unknown floating source Vs given V(B) -> exact 10∠0° V
 		const vsSolved = solveCircuit({
 			...supernodeBase,
 			unknownProblem: {
 				componentId: 'Vs',
 				symbol: 'Vs',
-				constraint: { kind: 'node_voltage', targetId: 'N2', value: vN2Str, label: 'V_1' }
+				constraint: { kind: 'node_voltage', targetId: 'B', value: vN2Str, label: 'V_1' }
 			}
 		});
 		expect(vsSolved.unknownSolution?.valid).toBe(true);
@@ -872,7 +872,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 			unknownProblem: {
 				componentId: 'L1',
 				symbol: 'X_L',
-				constraint: { kind: 'node_voltage', targetId: 'N2', value: vN2Str }
+				constraint: { kind: 'node_voltage', targetId: 'B', value: vN2Str }
 			}
 		});
 		expect(l1Solved.unknownSolution?.valid).toBe(true);
@@ -890,7 +890,7 @@ describe('solveUnknownParameter — Exact Analytical Inverse Circuit Solver', ()
 			unknownProblem: {
 				componentId: 'C2',
 				symbol: 'X_C',
-				constraint: { kind: 'node_voltage', targetId: 'N2', value: vN2Str }
+				constraint: { kind: 'node_voltage', targetId: 'B', value: vN2Str }
 			}
 		});
 		expect(c2Solved.unknownSolution?.valid).toBe(true);

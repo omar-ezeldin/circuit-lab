@@ -167,6 +167,68 @@ function isPointOnSegment(p: GridPoint, a: GridPoint, b: GridPoint, eps = 1e-6):
 	return Math.abs(cross) <= eps * segLen;
 }
 
+/** Auto node name for the n-th (0-based) non-reference node: A..Z, AA, AB, ..., AZ, BA, ... */
+/**
+ * Old documents and share links (before letter names) refer to nodes as N1, N2, …, numbered in
+ * the same order the letters use now, so N<k> is the k-th letter. Returns null for other IDs.
+ */
+export function legacyNodeIdToLetter(id: string): string | null {
+	const m = /^N([1-9]\d*)$/.exec(id);
+	return m ? nodeLetterName(Number(m[1]) - 1) : null;
+}
+
+/** Rewrites legacy N<k> node references in a document that has no custom node names. */
+export function migrateLegacyNodeIds(doc: CircuitDocument): void {
+	if (doc.nodeNames && doc.nodeNames.length > 0) return;
+	const fix = (id: string | undefined) => (id === undefined ? id : (legacyNodeIdToLetter(id) ?? id));
+	for (const c of doc.components) {
+		const ref = c.controlRef;
+		if (!ref) continue;
+		if (ref.controlNodePos !== undefined) ref.controlNodePos = fix(ref.controlNodePos);
+		if (ref.controlNodeNeg !== undefined) ref.controlNodeNeg = fix(ref.controlNodeNeg);
+	}
+	const con = doc.unknownProblem?.constraint;
+	if (con && con.kind === 'node_voltage') con.targetId = fix(con.targetId)!;
+}
+
+export function nodeLetterName(index: number): string {
+	let n = index + 1;
+	let out = '';
+	while (n > 0) {
+		const rem = (n - 1) % 26;
+		out = String.fromCharCode(65 + rem) + out;
+		n = Math.floor((n - 1) / 26);
+	}
+	return out;
+}
+
+/** Node ID as a LaTeX subscript body: underscores are escaped so `Vo_1` / `A_` never break KaTeX. */
+export function latexNodeId(nodeId: string): string {
+	return nodeId.replace(/_/g, '\\_');
+}
+
+export const MAX_NODE_NAME_LENGTH = 6;
+
+/**
+ * Validates a custom node name. `takenNames` are the names already used by OTHER nodes.
+ * Returns an error message, or null when the name is acceptable.
+ */
+export function validateNodeName(name: string, takenNames: Iterable<string> = []): string | null {
+	const trimmed = name.trim();
+	if (trimmed.length === 0) return 'Enter a name.';
+	if (trimmed.length > MAX_NODE_NAME_LENGTH) {
+		return `Use at most ${MAX_NODE_NAME_LENGTH} characters.`;
+	}
+	if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(trimmed)) {
+		return 'Start with a letter; use letters, digits or _ only.';
+	}
+	if (trimmed.toUpperCase() === 'GND') return '"GND" is reserved for the reference node.';
+	for (const taken of takenNames) {
+		if (taken === trimmed) return `"${trimmed}" is already used by another node.`;
+	}
+	return null;
+}
+
 /**
  * Builds the canonical electrical node graph from a CircuitDocument.
  * Merges touching pins, wire endpoints, and T-junctions via Union-Find.
@@ -334,7 +396,8 @@ export function buildElectricalGraph(doc: CircuitDocument): ElectricalGraph {
 		});
 	}
 
-	// Assign deterministic labels N1, N2, ... to non-reference buckets
+	// Assign deterministic labels A, B, ..., Z, AA, AB, ... to non-reference buckets, in position
+	// order. Custom names from doc.nodeNames (anchored by pin) win; auto letters skip names in use.
 	const nonRefBuckets = activeBuckets
 		.filter((b) => rootToNodeId.get(b.rootId) !== '0')
 		.sort((a, b) => {
@@ -343,12 +406,31 @@ export function buildElectricalGraph(doc: CircuitDocument): ElectricalGraph {
 			return a.rootId - b.rootId;
 		});
 
+	const customNameByRoot = new Map<number, string>();
+	const usedNames = new Set<string>(['0']);
+	const nonRefRoots = new Set(nonRefBuckets.map((b) => b.rootId));
+	for (const entry of doc.nodeNames ?? []) {
+		const root = compPinRoots.get(entry.pin?.componentId)?.[entry.pin?.pinIndex];
+		if (root === undefined || !nonRefRoots.has(root) || customNameByRoot.has(root)) continue;
+		if (typeof entry.name !== 'string' || validateNodeName(entry.name, usedNames) !== null) continue;
+		const name = entry.name.trim();
+		customNameByRoot.set(root, name);
+		usedNames.add(name);
+	}
+
 	const nonRefNodeIds: string[] = [];
-	nonRefBuckets.forEach((b, idx) => {
-		const id = `N${idx + 1}`;
+	let letterIdx = 0;
+	for (const b of nonRefBuckets) {
+		let id = customNameByRoot.get(b.rootId);
+		if (id === undefined) {
+			do {
+				id = nodeLetterName(letterIdx++);
+			} while (usedNames.has(id));
+			usedNames.add(id);
+		}
 		rootToNodeId.set(b.rootId, id);
 		nonRefNodeIds.push(id);
-	});
+	}
 
 	// Build final nodes dictionary (merging multiple ground buckets into single "0" node)
 	const nodes: Record<string, ElectricalNode> = {};

@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import {
 		BookOpen,
 		Cable,
+		Check,
 		CornerDownRight,
 		Eraser,
 		FileCode2,
@@ -21,7 +23,7 @@
 		X
 	} from 'lucide-svelte';
 	import { CircuitSymbol, GRID_SIZE, PALETTE_ITEMS } from '$lib/components/symbols';
-	import { Button, Separator, Tooltip } from '$lib/components/ui';
+	import { Button, Input, Separator, Tooltip } from '$lib/components/ui';
 	import {
 		Complex,
 		formatUnknownTermExpr,
@@ -1972,6 +1974,67 @@
 					})
 		};
 	});
+	// Node rename (probe bar). The target is held as a pin anchor, so it survives hover changes
+	// and the node-ID renumbering that follows a rename.
+	let renameTarget = $state<{ componentId: string; pinIndex: number } | null>(null);
+	let renameValue = $state('');
+	let renameError = $state<string | null>(null);
+	const renameNodeId = $derived(
+		renameTarget
+			? (circuit.graph.componentNodes[renameTarget.componentId]?.[renameTarget.pinIndex] ?? null)
+			: null
+	);
+	const probedNodeRenamable = $derived(
+		probedNodeData !== null && circuit.graph.nodes[probedNodeData.nodeId]?.isReference === false
+	);
+
+	function startNodeRename(nodeId: string): void {
+		const pin = circuit.graph.nodes[nodeId]?.componentPins[0];
+		if (!pin || circuit.graph.nodes[nodeId].isReference) return;
+		hoveredNodeId = null;
+		pinProbeNode(nodeId);
+		renameTarget = { componentId: pin.componentId, pinIndex: pin.pinIndex };
+		renameValue = nodeId;
+		renameError = null;
+		void tick().then(() => {
+			const el = document.getElementById('node-rename-input') as HTMLInputElement | null;
+			el?.focus();
+			el?.select();
+		});
+	}
+
+	function cancelNodeRename(): void {
+		renameTarget = null;
+		renameError = null;
+	}
+
+	function commitNodeRename(): void {
+		if (!renameNodeId) {
+			cancelNodeRename();
+			return;
+		}
+		hoveredNodeId = null;
+		const error = circuit.renameNode(renameNodeId, renameValue);
+		if (error) {
+			renameError = error;
+			return;
+		}
+		cancelNodeRename();
+	}
+
+	$effect(() => {
+		if (circuit.activeTool !== 'probe' && renameTarget) cancelNodeRename();
+	});
+
+	function handleRenameKeyDown(e: KeyboardEvent): void {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			commitNodeRename();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelNodeRename();
+		}
+	}
 </script>
 
 <svelte:window
@@ -2172,7 +2235,30 @@
 		>
 			<div class="flex min-w-0 items-center gap-1.5 text-xs">
 				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-voltage" aria-hidden="true"></span>
-				{#if probedNodeData}
+				{#if renameTarget && renameNodeId}
+					<span class="shrink-0 text-muted-foreground">Node</span>
+					<Input
+						id="node-rename-input"
+						bind:value={renameValue}
+						tabular
+						error={renameError !== null}
+						maxlength={6}
+						autocomplete="off"
+						autocapitalize="off"
+						spellcheck={false}
+						placeholder="e.g. Vo"
+						aria-label="Node name"
+						aria-describedby={renameError ? 'node-rename-error' : undefined}
+						class="w-20 shrink-0 lg:h-6"
+						oninput={() => (renameError = null)}
+						onkeydown={handleRenameKeyDown}
+					/>
+					{#if renameError}
+						<span id="node-rename-error" role="alert" class="truncate text-destructive">
+							{renameError}
+						</span>
+					{/if}
+				{:else if probedNodeData}
 					<span class="truncate text-muted-foreground">
 						Node <span class="font-engineering font-semibold text-foreground">{probedNodeData.nodeId}:</span>{' '}
 						<span class="font-engineering font-semibold text-voltage">
@@ -2185,16 +2271,52 @@
 					</span>
 				{/if}
 			</div>
-			<Button
-				variant="ghost"
-				size="sm"
-				class="min-h-11 shrink-0 gap-1 px-2.5 text-xs lg:min-h-0 lg:h-6 lg:px-2"
-				aria-label="Exit active tool"
-				onclick={() => circuit.setActiveTool('select')}
-			>
-				<X class="size-3.5" aria-hidden="true" />
-				<span>Done</span>
-			</Button>
+			<div class="flex shrink-0 items-center gap-0.5">
+				{#if renameTarget && renameNodeId}
+					<Button
+						variant="ghost"
+						size="sm"
+						class="min-h-11 shrink-0 gap-1 px-2.5 text-xs lg:min-h-0 lg:h-6 lg:px-2"
+						aria-label="Save node name"
+						onclick={commitNodeRename}
+					>
+						<Check class="size-3.5" aria-hidden="true" />
+						<span class="hidden sm:inline">Save</span>
+					</Button>
+					<Button
+						variant="ghost"
+						size="sm"
+						class="min-h-11 shrink-0 gap-1 px-2.5 text-xs lg:min-h-0 lg:h-6 lg:px-2"
+						aria-label="Cancel renaming"
+						onclick={cancelNodeRename}
+					>
+						<X class="size-3.5" aria-hidden="true" />
+						<span class="hidden sm:inline">Cancel</span>
+					</Button>
+				{:else}
+					{#if probedNodeData && probedNodeRenamable}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="min-h-11 shrink-0 px-2.5 text-xs lg:min-h-0 lg:h-6 lg:px-2"
+							aria-label="Rename node {probedNodeData.nodeId}"
+							onclick={() => probedNodeData && startNodeRename(probedNodeData.nodeId)}
+						>
+							Rename
+						</Button>
+					{/if}
+					<Button
+						variant="ghost"
+						size="sm"
+						class="min-h-11 shrink-0 gap-1 px-2.5 text-xs lg:min-h-0 lg:h-6 lg:px-2"
+						aria-label="Exit active tool"
+						onclick={() => circuit.setActiveTool('select')}
+					>
+						<X class="size-3.5" aria-hidden="true" />
+						<span>Done</span>
+					</Button>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
