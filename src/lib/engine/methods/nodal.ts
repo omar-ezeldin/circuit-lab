@@ -8,7 +8,7 @@
  *   4. Dependent source controlling variable substitutions in terms of node voltages
  *
  * Assembles and solves the reduced nodal linear system A * V = b,
- * recovers voltage-source currents via topological leaf-peeling, and cross-verifies against MNA.
+ * recovers voltage-source currents from the branch currents, and cross-verifies against MNA.
  */
 
 import { Complex } from '../complex';
@@ -18,7 +18,7 @@ import {
 	parseSourceValue,
 	resolveDependentControlNodes
 } from '../graph';
-import { matrixToLatex, solveComplexLinearSystem } from '../linalg';
+import { solveComplexLinearSystem } from '../linalg';
 import {
 	isDependentSourceKind,
 	isDependentVoltageSource,
@@ -29,6 +29,7 @@ import {
 	type SolutionStep
 } from '../types';
 import {
+	courseSolveDisplay,
 	formatDependentSourceExpr,
 	formatLatexTerm,
 	formatLatexValue,
@@ -313,6 +314,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 	const b: Complex[] = Array.from({ length: U }, () => Complex.zero());
 	const kclLatex: string[] = [];
 	const dependentLatex: string[] = [];
+	const hasDependentSrc = twoTerminal.some((c) => isDependentSourceKind(c.kind));
 
 	// Record pedagogical dependent source equations
 	for (const comp of twoTerminal) {
@@ -340,7 +342,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		if (cb.voltage !== null) {
 			b[targetRow] = b[targetRow].add(cb.voltage);
 			kclLatex.push(
-				`\\text{Constraint (${latexSub(cb.comp.label)}):}\\; V_{${cb.nodeA}} - V_{${cb.nodeB}} = ${formatLatexValue(cb.voltage, mode)}`
+				`\\text{Supernode (${latexSub(cb.comp.label)}):}\\; V_{${cb.nodeA}} - V_{${cb.nodeB}} = ${formatLatexValue(cb.voltage, mode)}`
 			);
 			return true;
 		}
@@ -365,7 +367,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		const exprTex = formatDependentSourceExpr(cb.comp, doc, mode);
 		const vA = cb.nodeA === '0' ? '0' : `V_{${cb.nodeA}}`;
 		const vB = cb.nodeB === '0' ? '' : ` - V_{${cb.nodeB}}`;
-		kclLatex.push(`\\text{Constraint (${latexSub(cb.comp.label)}):}\\; ${vA}${vB} = ${exprTex}`);
+		kclLatex.push(`\\text{Dependent source (${latexSub(cb.comp.label)}):}\\; ${vA}${vB} = ${exprTex}`);
 		return true;
 	};
 
@@ -483,7 +485,7 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		nodeVoltages[nid] = v;
 	}
 
-	let matrixLatex: string | undefined;
+	let solveDisplay: ReturnType<typeof courseSolveDisplay> | undefined;
 	if (U > 0) {
 		if (row !== U) {
 			return {
@@ -507,10 +509,12 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 		unknownNodes.forEach((nid, i) => {
 			nodeVoltages[nid] = solved.x[i];
 		});
-		matrixLatex = matrixToLatex(
+		solveDisplay = courseSolveDisplay(
 			A,
+			b,
 			unknownNodes.map((nid) => `V_{${nid}}`),
-			b
+			'V',
+			mode
 		);
 	}
 
@@ -628,30 +632,34 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 	if (supernodeGroups.length > 0) {
 		steps.push({
 			title: `${stepNum++}. Supernode Identification`,
-			description: `Floating voltage-constraint branches join non-reference nodes into ${supernodeGroups.length} supernode(s).`,
+			description: `Floating voltage sources join non-reference nodes into ${supernodeGroups.length} supernode(s).`,
 			latex: supernodeGroups.map((g) => `\\text{Supernode: } \\{${g.join(', ')}\\}`)
 		});
 	}
 
 	steps.push({
-		title: `${stepNum++}. Nodal KCL & Constraint Equations`,
-		description:
-			'Apply KCL at each ordinary node and supernode, plus voltage-source and dependent-source constraints.',
+		title: `${stepNum++}. Nodal KCL Equations`,
+		description: hasDependentSrc
+			? 'Apply KCL at each ordinary node and supernode, plus the voltage-source and dependent-source equations.'
+			: 'Apply KCL at each ordinary node and supernode, plus the voltage-source equations.',
 		latex: kclLatex.length > 0 ? kclLatex : ['\\text{All node voltages are directly fixed by sources.}']
 	});
 
-	if (matrixLatex) {
+	if (solveDisplay && solveDisplay.latex.length > 0) {
 		steps.push({
-			title: `${stepNum++}. Reduced Nodal Matrix System`,
-			description: `Reduced ${U}×${U} nodal system (eliminating ground-referenced independent source nodes and voltage-source current rows).`,
-			matrixLatex
+			title: `${stepNum++}. ${solveDisplay.remaining >= 2 ? 'Solve the Simultaneous Equations' : 'Solve the Equation'}`,
+			description:
+				solveDisplay.remaining >= 2
+					? `${solveDisplay.remaining} equations in ${solveDisplay.remaining} unknown node voltages, solved by substitution.`
+					: 'Collect the terms of each unknown node voltage and divide.',
+			latex: solveDisplay.latex
 		});
 	}
 
 	steps.push({
 		title: `${stepNum++}. Solved Node Voltages`,
 		description:
-			'Solved node voltages and recovered branch currents via Ohm’s law and KCL leaf-peeling.',
+			'Solved node voltages and found the branch currents using Ohm’s law and KCL.',
 		latex: solvedLatex
 	});
 

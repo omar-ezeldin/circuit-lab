@@ -24,7 +24,6 @@
 	const SUMMARY_SURFACE_BG = 'color-mix(in srgb, var(--surface-rail) 30%, var(--card))';
 
 	const METHOD_TABS: Array<{ id: MethodId; label: string }> = [
-		{ id: 'kcl_kvl', label: 'KCL / KVL' },
 		{ id: 'nodal', label: 'Nodal' },
 		{ id: 'mesh', label: 'Mesh' },
 		{ id: 'superposition', label: 'Superposition' },

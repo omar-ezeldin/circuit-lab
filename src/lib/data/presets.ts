@@ -37,7 +37,7 @@ export const PRESETS: CircuitPreset[] = [
 		id: 'dc-divider',
 		name: 'DC Voltage & Current Divider',
 		category: 'dc',
-		featuredMethod: 'kcl_kvl',
+		featuredMethod: 'nodal',
 		description:
 			'12 V source feeding a 2 kΩ series resistor into parallel 6 kΩ and 12 kΩ load branches (8 V divider output).',
 		theveninLoadId: 'R3',

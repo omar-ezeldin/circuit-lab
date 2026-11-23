@@ -64,7 +64,6 @@ describe('Curated Textbook DC & AC Presets', () => {
 
 		const isDependentPreset = preset.id === 'dc-dependent-vcvs';
 		for (const methodId of [
-			'kcl_kvl',
 			'nodal',
 			'mesh',
 			'superposition',

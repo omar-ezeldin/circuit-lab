@@ -439,7 +439,7 @@ export function solveTheveninNorton(
 	if (verifyLatex.length > 0) {
 		steps.push({
 			title: '4. Reconnect Load & Verify',
-			description: `Reconnected ${loadComp!.label} to the Thévenin equivalent and verified against full MNA.`,
+			description: `Reconnected ${loadComp!.label} to the Thévenin equivalent and checked the result against the full circuit solution.`,
 			latex: verifyLatex
 		});
 	}

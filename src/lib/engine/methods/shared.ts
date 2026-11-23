@@ -349,3 +349,239 @@ export function buildPortTestWires(
 		{ id: `${idPrefix}wA__`, points: route(pinA, ptA, 0.37) }
 	];
 }
+
+export interface CourseSolveDisplay {
+	/** Lines for the "solve" step (substitutions and/or the one-line solve). */
+	latex: string[];
+	/** Number of equations still solved simultaneously (0, 1 or ≥2). */
+	remaining: number;
+}
+
+/**
+ * Presents the solution of `A x = b` the way it is done by hand in the course:
+ * rows with a single unknown are solved directly and substituted into the rest
+ * (e.g. a mesh current fixed by a current source); one remaining equation is
+ * solved in one line (collect terms, divide); when two or more equations remain,
+ * they are solved by substitution (write one unknown in terms of the others,
+ * substitute into the rest, repeat, then back-substitute). Never a matrix.
+ * Display only — the caller still solves the full system.
+ */
+export function courseSolveDisplay(
+	A: Complex[][],
+	b: Complex[],
+	names: string[],
+	unit: string,
+	mode: AnalysisMode
+): CourseSolveDisplay {
+	const n = names.length;
+	const EPS = 1e-12;
+	const known = new Map<number, Complex>();
+	const usedRows = new Set<number>();
+	const latex: string[] = [];
+	const val = (c: Complex) => formatLatexValue(c, mode);
+	const term = (c: Complex) => formatLatexTerm(c, mode);
+
+	const reducedRow = (r: number) => {
+		let rhs = b[r];
+		const unknowns: number[] = [];
+		for (let j = 0; j < n; j++) {
+			const a = A[r][j];
+			if (a.isZero(EPS)) continue;
+			const kv = known.get(j);
+			if (kv) rhs = rhs.sub(a.mul(kv));
+			else unknowns.push(j);
+		}
+		return { rhs, unknowns };
+	};
+
+	// Peel off rows with a single unknown, substituting known values each pass.
+	// Only rows with one unknown *before* substitution are peeled here, so a row
+	// that becomes single-unknown only after substitution is left as the final
+	// "one equation" step and is shown with its substituted terms.
+	let progress = true;
+	while (progress) {
+		progress = false;
+		for (let r = 0; r < A.length; r++) {
+			if (usedRows.has(r)) continue;
+			// The last unknown is left for the one-line solve step below.
+			if (n - known.size <= 1) break;
+			const nonzero = A[r].filter((a) => !a.isZero(EPS)).length;
+			if (nonzero !== 1) continue;
+			const { rhs, unknowns } = reducedRow(r);
+			usedRows.add(r);
+			if (unknowns.length !== 1) continue;
+			const j = unknowns[0];
+			const a = A[r][j];
+			const x = rhs.div(a);
+			known.set(j, x);
+			latex.push(
+				a.equals(Complex.one(), EPS)
+					? `${names[j]} = ${val(x)}\\text{ ${unit}}`
+					: `${term(a)}\\,${names[j]} = ${val(rhs)} \\;\\Rightarrow\\; ${names[j]} = ${val(x)}\\text{ ${unit}}`
+			);
+			progress = true;
+		}
+	}
+
+	const rows = A.map((_, r) => r).filter((r) => !usedRows.has(r));
+	const unknownCols = names.map((_, j) => j).filter((j) => !known.has(j));
+
+	if (unknownCols.length === 0) return { latex, remaining: 0 };
+
+	if (unknownCols.length === 1 && rows.length >= 1) {
+		const j = unknownCols[0];
+		const r = rows.find((rr) => !A[rr][j].isZero(EPS)) ?? rows[0];
+		const { rhs } = reducedRow(r);
+		const a = A[r][j];
+		const x = rhs.div(a);
+		if (known.size > 0) latex.push(`\\text{Substituting the known values leaves one equation:}`);
+		latex.push(
+			`${term(a)}\\,${names[j]} = ${val(rhs)} \\;\\Rightarrow\\; ${names[j]} = ${val(rhs).includes('\\frac') || val(a).includes('\\frac') ? `${term(rhs)} \\div ${term(a)}` : `\\frac{${val(rhs)}}{${val(a)}}`} = ${val(x)}\\text{ ${unit}}`
+		);
+		return { latex, remaining: 1 };
+	}
+
+	// Substitution: two or more simultaneous equations remain.
+	const W = new Map<number, Complex[]>();
+	const R = new Map<number, Complex>();
+	for (const r of rows) {
+		W.set(r, A[r].map((a, j) => (known.has(j) ? Complex.zero() : a)));
+		R.set(r, reducedRow(r).rhs);
+	}
+	const active = new Set(unknownCols);
+	let activeRows = [...rows];
+	const big = unknownCols.length > 4;
+	const isOne = (c: Complex) => c.equals(Complex.one(), EPS);
+
+	/** Sum of terms `c*label` (a part without a label is a constant). */
+	const sumLatex = (parts: { c: Complex; label?: string; num?: boolean }[]): string => {
+		const body = (m: Complex, p: { label?: string; num?: boolean }) => {
+			if (!p.label) return val(m);
+			const lab = p.label;
+			return isOne(m) ? lab : `${term(m)}${p.num ? '\\cdot ' : '\\,'}${lab}`;
+		};
+		let out = '';
+		for (const p of parts) {
+			if (p.c.isZero(EPS)) continue;
+			const neg = p.c.isReal(EPS) && p.c.re < 0;
+			const m = neg ? p.c.neg() : p.c;
+			const piece = p.label ? body(m, p) : neg ? val(m) : term(m);
+			out += out === '' ? (neg ? `-${piece}` : piece) : neg ? ` - ${piece}` : ` + ${piece}`;
+		}
+		return out === '' ? '0' : out;
+	};
+	const eqnLatex = (coefs: Complex[], rhs: Complex) =>
+		`${sumLatex([...active].filter((j) => !coefs[j].isZero(EPS)).map((j) => ({ c: coefs[j], label: names[j] })))} = ${val(rhs)}`;
+	/** `x = (rhs - others)/a`, written with numbers; others are labelled by name or by value. */
+	const explicitLatex = (
+		name: string,
+		a: Complex,
+		rhs: Complex,
+		others: { c: Complex; label: string; num?: boolean }[]
+	) => {
+		const num = sumLatex([{ c: rhs }, ...others.map((o) => ({ ...o, c: o.c.neg() }))]);
+		const aVal = val(a);
+		// Divide through when a = ±1 or either side is already a fraction (no nested \\frac);
+		// otherwise keep the hand-working form x = (rhs − terms) / a.
+		if (isOne(a) || isOne(a.neg()) || num.includes('\\frac') || aVal.includes('\\frac')) {
+			return `${name} = ${sumLatex([{ c: rhs.div(a) }, ...others.map((o) => ({ ...o, c: o.c.neg().div(a) }))])}`;
+		}
+		return `${name} = \\frac{${num}}{${aVal}}`;
+	};
+
+	const stack: { j: number; a: Complex; rhs: Complex; others: { j: number; c: Complex }[] }[] = [];
+	let first = true;
+	while (active.size > 1 && activeRows.length > 0) {
+		const nz = (r: number) => [...active].filter((j) => !W.get(r)![j].isZero(EPS));
+		let pickRow = -1;
+		let best = Infinity;
+		for (const r of activeRows) {
+			const cnt = nz(r).length;
+			if (cnt > 0 && cnt < best) {
+				best = cnt;
+				pickRow = r;
+			}
+		}
+		if (pickRow < 0) break;
+		const row = W.get(pickRow)!;
+		const js = nz(pickRow);
+		const p = js.reduce((m, j) => (row[j].abs() > row[m].abs() + 1e-12 ? j : m), js[0]);
+		const a = row[p];
+		const rhs = R.get(pickRow)!;
+		const others = js.filter((j) => j !== p).map((j) => ({ j, c: row[j] }));
+		const show = !big || first;
+		first = false;
+		if (show) {
+			latex.push(
+				`\\text{Equation with the fewest unknowns:}\\;${eqnLatex(row, rhs)}`,
+				explicitLatex(
+					names[p],
+					a,
+					rhs,
+					others.map((o) => ({ c: o.c, label: names[o.j] }))
+				)
+			);
+		}
+		stack.push({ j: p, a, rhs, others });
+		activeRows = activeRows.filter((r) => r !== pickRow);
+		const changed: string[] = [];
+		for (const r of activeRows) {
+			const w = W.get(r)!;
+			const f = w[p];
+			if (f.isZero(EPS)) continue;
+			const k = f.div(a);
+			for (const o of others) w[o.j] = w[o.j].sub(k.mul(o.c));
+			w[p] = Complex.zero();
+			R.set(r, R.get(r)!.sub(k.mul(rhs)));
+			changed.push(eqnLatex(w, R.get(r)!));
+		}
+		active.delete(p);
+		if (show && changed.length > 0) {
+			latex.push(`\\text{Substituting }${names[p]}\\text{ into the other equations gives:}`, ...changed);
+		}
+	}
+
+	// Back-substitution values (also used silently for the calculator case).
+	const last = [...active];
+	const solvedVals = new Map<number, Complex>();
+	if (last.length === 1 && activeRows.length > 0) {
+		const j = last[0];
+		const r = activeRows.find((rr) => !W.get(rr)![j].isZero(EPS)) ?? activeRows[0];
+		const a = W.get(r)![j];
+		if (!a.isZero(EPS)) {
+			const rhs = R.get(r)!;
+			solvedVals.set(j, rhs.div(a));
+			if (!big) {
+				latex.push(`\\text{The last equation has one unknown:}`);
+				latex.push(
+					`${term(a)}\\,${names[j]} = ${val(rhs)} \\;\\Rightarrow\\; ${names[j]} = ${val(rhs).includes('\\frac') || val(a).includes('\\frac') ? `${term(rhs)} \\div ${term(a)}` : `\\frac{${val(rhs)}}{${val(a)}}`} = ${val(solvedVals.get(j)!)}\\text{ ${unit}}`
+				);
+			}
+			for (let k = stack.length - 1; k >= 0; k--) {
+				const st = stack[k];
+				const sum = st.others.reduce((acc, o) => acc.add(o.c.mul(solvedVals.get(o.j) ?? Complex.zero())), Complex.zero());
+				const x = st.rhs.sub(sum).div(st.a);
+				solvedVals.set(st.j, x);
+				if (!big) {
+					if (k === stack.length - 1) latex.push(`\\text{Back-substituting:}`);
+					latex.push(
+						`${explicitLatex(
+							names[st.j],
+							st.a,
+							st.rhs,
+							st.others.map((o) => ({ c: o.c, label: term(solvedVals.get(o.j) ?? Complex.zero()), num: true }))
+						)} = ${val(x)}\\text{ ${unit}}`
+					);
+				}
+			}
+		}
+	}
+	if (big && solvedVals.size > 0) {
+		latex.push(`\\text{(Solve the remaining equations with the calculator: MODE EQN)}`);
+		for (const j of unknownCols) {
+			const v = solvedVals.get(j);
+			if (v) latex.push(`${names[j]} = ${val(v)}\\text{ ${unit}}`);
+		}
+	}
+	return { latex, remaining: unknownCols.length };
+}

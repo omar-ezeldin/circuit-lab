@@ -6,6 +6,7 @@
 
 import { solveMNA, type SolveMnaOptions } from './mna';
 import { solveKclKvl } from './methods/kcl-kvl';
+import { formatLatexValue, latexSub } from './methods/shared';
 import { solveMesh } from './methods/mesh';
 import { solveNodal } from './methods/nodal';
 import { solveSourceTransform } from './methods/source-transform';
@@ -40,8 +41,8 @@ const METHOD_TITLES: Record<MethodId, string> = {
 	thevenin_norton: 'Thévenin & Norton Equivalent'
 };
 
+/** Methods shown to students by default. KCL/KVL stays available when requested explicitly. */
 const ALL_METHODS: MethodId[] = [
-	'kcl_kvl',
 	'nodal',
 	'mesh',
 	'superposition',
@@ -148,13 +149,32 @@ export function solveCircuit(
 				methods.superposition = solveSuperposition(electricalDoc, mna);
 				break;
 			case 'source_transform':
-				methods.source_transform = solveSourceTransform(electricalDoc, mna);
+				methods.source_transform = solveSourceTransform(electricalDoc, mna, {
+					targetComponentId:
+						safeTheveninTarget?.kind === 'component' ? safeTheveninTarget.componentId : undefined
+				});
 				break;
 			case 'thevenin_norton': {
 				const res = solveTheveninNorton(electricalDoc, mna, safeTheveninTarget);
 				methods.thevenin_norton = res.methodResult;
 				theveninNorton = res.theveninNorton;
 				break;
+			}
+		}
+	}
+
+	// Final "Ans." line for the requested component (Thévenin/Norton has its own answer).
+	if (safeTheveninTarget?.kind === 'component') {
+		const br = mna.branches[safeTheveninTarget.componentId];
+		if (br) {
+			const lab = latexSub(br.label);
+			const ans = [
+				`\\text{Ans. } I_{${lab}} = ${formatLatexValue(br.current, mna.mode)}\\text{ A}`,
+				`\\text{Ans. } V_{${lab}} = ${formatLatexValue(br.voltage, mna.mode)}\\text{ V}`
+			];
+			for (const [id, res] of Object.entries(methods)) {
+				if (id === 'thevenin_norton' || !res?.applicable) continue;
+				res.steps.push({ title: 'Ans.', description: 'Requested quantity', latex: ans });
 			}
 		}
 	}

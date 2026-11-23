@@ -132,7 +132,20 @@ function solveReducedCore(
 	return { nodeV, edgeV, edgeI };
 }
 
-export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): MethodResult {
+export interface SourceTransformOptions {
+	/**
+	 * Component whose current/voltage the question asks for (e.g. "find Io through R3").
+	 * It is never combined or transformed away, so the reduction stops at a circuit
+	 * where its value can be read off directly — the way the course solves it.
+	 */
+	targetComponentId?: string;
+}
+
+export function solveSourceTransform(
+	doc: CircuitDocument,
+	mna: MnaSolution,
+	options: SourceTransformOptions = {}
+): MethodResult {
 	const title = 'Source Transformation';
 	if (!mna.valid) {
 		return {
@@ -224,6 +237,12 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 		activeNodes.add(e.v);
 	}
 
+	const targetId =
+		options.targetComponentId && edges.some((e) => e.id === options.targetComponentId && e.kind === 'impedance')
+			? options.targetComponentId
+			: undefined;
+	const isTarget = (e: RedEdge) => targetId !== undefined && e.id === targetId;
+
 	const steps: SolutionStep[] = [];
 	const unwindStack: UnwindRecord[] = [];
 	let synthCounter = 1;
@@ -247,7 +266,7 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 		// Rule 1: Combine parallel impedances between identical (u, v)
 		const impByPair = new Map<string, RedEdge[]>();
 		for (const e of edges) {
-			if (e.kind !== 'impedance' || e.value.isZero(1e-15)) continue;
+			if (e.kind !== 'impedance' || e.value.isZero(1e-15) || isTarget(e)) continue;
 			const pk = pairKey(e.u, e.v);
 			const list = impByPair.get(pk) ?? [];
 			list.push(e);
@@ -341,6 +360,7 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 			if (inc.length !== 2) continue;
 			const [e1, e2] = inc;
 			if (e1.id === e2.id) continue;
+			if (isTarget(e1) || isTarget(e2)) continue;
 			if (e1.kind === 'impedance' && e2.kind === 'impedance') {
 				const u = e1.u === w ? e1.v : e1.u;
 				const v = e2.u === w ? e2.v : e2.u;
@@ -429,7 +449,7 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 			if (nodesFromNortonToThevenin.has(w)) continue;
 			const vEdge = inc.find((e) => e.kind === 'v_source');
 			const zEdge = inc.find((e) => e.kind === 'impedance');
-			if (!vEdge || !zEdge || zEdge.value.isZero(1e-15)) continue;
+			if (!vEdge || !zEdge || zEdge.value.isZero(1e-15) || isTarget(zEdge)) continue;
 
 			const u = vEdge.u === w ? vEdge.v : vEdge.u; // outer node on V side
 			const v = zEdge.u === w ? zEdge.v : zEdge.u; // outer node on Z side
@@ -504,6 +524,7 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 				(e) =>
 					e.kind === 'impedance' &&
 					!e.value.isZero(1e-15) &&
+					!isTarget(e) &&
 					((e.u === cs.u && e.v === cs.v) || (e.u === cs.v && e.v === cs.u))
 			);
 			if (!zPartner) continue;
@@ -596,14 +617,14 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 		};
 	}
 
-	// Solve the final reduced core independently
+	// Solve the final simplified circuit independently
 	const reduced = solveReducedCore(edges, activeNodes);
 	if (!reduced) {
 		return {
 			methodId: 'source_transform',
 			title,
 			applicable: false,
-			inapplicableReason: 'Reduced core could not be solved.',
+			inapplicableReason: 'The simplified circuit could not be solved.',
 			steps
 		};
 	}
@@ -633,15 +654,89 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 
 	const irreducibleNote =
 		edges.length > 3
-			? `Reduced to a ${activeNodes.size}-node, ${edges.length}-branch core; solved core and back-substituted all eliminated branches.`
-			: 'Fully reduced network via source transformations and series/parallel combinations, then back-substituted.';
+			? `Simplified to a ${activeNodes.size}-node, ${edges.length}-branch circuit, solved it, then worked back to every branch that was removed.`
+			: 'Simplified the circuit with source transformations and series/parallel combinations, then worked back to every branch.';
 
 	const finalLatex = graph.nonRefNodeIds.map(
 		(nid) => `V_{${nid}} = ${formatLatexValue(nodeVoltages[nid], mode)}\\text{ V}`
 	);
 
+	// Course-style finish: the asked branch is still in the circuit, so read its value off
+	// the reduced circuit with one rule (current divider / Ohm's law) instead of a core solve.
+	const targetEdge = targetId ? edges.find((e) => e.id === targetId) : undefined;
+	if (targetEdge) {
+		const tLabel = latexSub(targetEdge.label);
+		const iT = reduced.edgeI.get(targetEdge.id) ?? Complex.zero();
+		const vT = reduced.edgeV.get(targetEdge.id) ?? Complex.zero();
+		const between = (e: RedEdge) => pairKey(e.u, e.v) === pairKey(targetEdge.u, targetEdge.v);
+		const twoNode = edges.every(between);
+		// Walk the circuit from the target's v end back to its u end (direction of I_target).
+		// Returns the loop if the reduced circuit is one series loop of V sources and impedances.
+		const singleLoop = (): { e: RedEdge; from: string; to: string }[] | null => {
+			if (edges.some((e) => e.kind === 'i_source')) return null;
+			const deg = new Map<string, number>();
+			for (const e of edges) for (const n of [e.u, e.v]) deg.set(n, (deg.get(n) ?? 0) + 1);
+			if ([...deg.values()].some((d) => d !== 2)) return null;
+			const path: { e: RedEdge; from: string; to: string }[] = [{ e: targetEdge, from: targetEdge.u, to: targetEdge.v }];
+			let at = targetEdge.v;
+			let prev = targetEdge;
+			while (at !== targetEdge.u) {
+				const next = edges.find((e) => e !== prev && (e.u === at || e.v === at));
+				if (!next) return null;
+				const to = next.u === at ? next.v : next.u;
+				path.push({ e: next, from: at, to });
+				prev = next;
+				at = to;
+				if (path.length > edges.length) return null;
+			}
+			return path.length === edges.length ? path : null;
+		};
+		const finishLatex: string[] = [];
+		let finishDesc: string;
+		if (twoNode) {
+			const zs = edges.filter((e) => e.kind === 'impedance');
+			const ySum = zs.reduce((acc, e) => acc.add(e.value.inv()), Complex.zero());
+			const iTot = vT.mul(ySum);
+			finishDesc = `Everything left sits in parallel with ${targetEdge.label}: one node pair. The total source current splits by admittance (current divider).`;
+			finishLatex.push(
+				`V_{${tLabel}} = \\frac{I_{\\text{total}}}{\\sum Y},\\quad \\sum Y = ${zs.map((e) => `\\frac{1}{${formatLatexTerm(e.value, mode)}}`).join(' + ')} = ${formatLatexValue(ySum, mode)}\\text{ S}`,
+				`V_{${tLabel}} = ${formatLatexTerm(iTot, mode)} \\div ${formatLatexTerm(ySum, mode)} = ${formatLatexValue(vT, mode)}\\text{ V}`,
+				`I_{${tLabel}} = \\frac{V_{${tLabel}}}{${formatLatexTerm(targetEdge.value, mode)}} = ${formatLatexValue(iT, mode)}\\text{ A}`
+			);
+		} else if (singleLoop()) {
+			const loop = singleLoop()!;
+			const zSum = loop.filter((x) => x.e.kind === 'impedance').reduce((acc, x) => acc.add(x.e.value), Complex.zero());
+			const rises = loop
+				.filter((x) => x.e.kind === 'v_source')
+				.map((x) => (x.e.u === x.to ? x.e.value : x.e.value.neg()));
+			const emf = rises.reduce((acc, r) => acc.add(r), Complex.zero());
+			finishDesc = `Only one loop is left, and ${targetEdge.label} is in it. KVL around the loop: sum of source voltages = I × sum of impedances.`;
+			if (emf.div(zSum).equals(iT, 1e-9)) {
+				const num = rises.map((r, k) => (k === 0 ? formatLatexValue(r, mode) : `${r.re < 0 && r.isReal() ? '-' : '+'} ${formatLatexValue(r.isReal() && r.re < 0 ? r.neg() : r, mode)}`)).join(' ');
+				finishLatex.push(
+					`I_{${tLabel}} = \\frac{\\sum V}{\\sum Z} = \\frac{${num}}{${loop.filter((x) => x.e.kind === 'impedance').map((x) => formatLatexTerm(x.e.value, mode)).join(' + ')}} = ${formatLatexValue(iT, mode)}\\text{ A}`,
+					`V_{${tLabel}} = I_{${tLabel}} \\cdot ${formatLatexTerm(targetEdge.value, mode)} = ${formatLatexValue(vT, mode)}\\text{ V}`
+				);
+			} else {
+				finishLatex.push(`I_{${tLabel}} = ${formatLatexValue(iT, mode)}\\text{ A}`, `V_{${tLabel}} = ${formatLatexValue(vT, mode)}\\text{ V}`);
+			}
+		} else {
+			finishDesc = `No further source transformation simplifies the circuit around ${targetEdge.label}; the remaining ${edges.length}-branch circuit is solved directly.`;
+			finishLatex.push(
+				`I_{${tLabel}} = ${formatLatexValue(iT, mode)}\\text{ A}`,
+				`V_{${tLabel}} = ${formatLatexValue(vT, mode)}\\text{ V}`
+			);
+		}
+		steps.push({
+			title: `Step ${steps.length + 1}: Read Off ${targetEdge.label}`,
+			description: finishDesc,
+			latex: finishLatex,
+			highlightIds: [targetEdge.id]
+		});
+	}
+
 	steps.push({
-		title: `Step ${steps.length + 1}: Final Solution & Back-Substitution`,
+		title: `Step ${steps.length + 1}: All Node Voltages and Branch Currents`,
 		description: irreducibleNote,
 		latex: [
 			...finalLatex,
@@ -662,11 +757,33 @@ export function solveSourceTransform(doc: CircuitDocument, mna: MnaSolution): Me
 		methodId: 'source_transform',
 		title,
 		applicable: true,
-		steps,
+		steps: mergeRepeatedSteps(steps),
 		summaryLatex: `\\begin{aligned} ${finalLatex
 			.slice(0, 6)
 			.map((s) => s.replace(' = ', ' &= '))
 			.join(' \\\\ ')} \\end{aligned}`,
 		...verification
 	};
+}
+
+/**
+ * Merges consecutive steps of the same kind (e.g. three "Combine Series Impedances" in a
+ * row) into one step with all their equations, and renumbers. A hand solution writes
+ * "R1 + R2 = 3 kΩ, R3 + R4 = 5 kΩ" on one line, not as separate steps.
+ */
+export function mergeRepeatedSteps(steps: SolutionStep[]): SolutionStep[] {
+	const kindOf = (t: string) => t.replace(/^Step \d+:\s*/, '');
+	const merged: SolutionStep[] = [];
+	for (const step of steps) {
+		const prev = merged.at(-1);
+		if (prev && kindOf(prev.title) === kindOf(step.title) && !step.matrixLatex && !prev.matrixLatex) {
+			prev.description = `${prev.description} ${step.description}`;
+			prev.latex = [...(prev.latex ?? []), ...(step.latex ?? [])];
+			if (step.highlightIds) prev.highlightIds = [...(prev.highlightIds ?? []), ...step.highlightIds];
+			if (step.snapshotNote) prev.snapshotNote = [prev.snapshotNote, step.snapshotNote].filter(Boolean).join(' ');
+		} else {
+			merged.push({ ...step, latex: step.latex ? [...step.latex] : undefined });
+		}
+	}
+	return merged.map((st, i) => ({ ...st, title: `Step ${i + 1}: ${kindOf(st.title)}` }));
 }
