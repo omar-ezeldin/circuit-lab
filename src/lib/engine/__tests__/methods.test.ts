@@ -607,7 +607,7 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(sup.steps[0].description).toContain('NEVER deactivated');
 	});
 
-	it('11. Thévenin & Norton Test-Source Method with Dependent Sources (VCVS & CCCS) matches exact textbook R_th', () => {
+	it('11. Thévenin & Norton with Dependent Sources (VCVS & CCCS) matches exact textbook R_th', () => {
 		// 11a. dc-dependent-vcvs preset across R2: V_th = 80/7 V, R_th = 4000/7 Ω, I_N = 20 mA
 		const preset = getPresetById('dc-dependent-vcvs')!;
 		const fullVcvs = solveCircuit(preset.document, {
@@ -618,8 +618,11 @@ describe('All 6 Pedagogical Method Solvers + Cross-Verification Gate', () => {
 		expect(fullVcvs.theveninNorton!.vth.re).toBeCloseTo(80 / 7, 9);
 		expect(fullVcvs.theveninNorton!.zth!.re).toBeCloseTo(4000 / 7, 9);
 		expect(fullVcvs.theveninNorton!.isc!.re).toBeCloseTo(0.02, 9);
+		// Independent + dependent sources: R_th = V_oc / I_sc (short A-B).
 		expect(
-			fullVcvs.methods.thevenin_norton!.steps.some((s) => s.title.includes('Test-Source Method'))
+			fullVcvs.methods.thevenin_norton!.steps.some((s) =>
+				(s.latex ?? []).some((l) => l.startsWith('R_{th} = \\frac{V_{oc}}{I_{sc}}'))
+			)
 		).toBe(true);
 
 		// 11b. CCCS circuit: V1=12V (A->0), R1=4Ω (A->B), F1=2*I_R1 (0->B), R2=6Ω (B->0)
