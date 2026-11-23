@@ -4,14 +4,19 @@
  */
 
 import { Complex } from './complex';
-import type {
-	AnalysisMode,
-	CircuitComponent,
-	CircuitDocument,
-	GridPoint,
-	NodePinAttachment,
-	Rotation,
-	ValidationDiagnostic
+import {
+	isCurrentControlledSource,
+	isDependentCurrentSource,
+	isDependentSourceKind,
+	isDependentVoltageSource,
+	isVoltageControlledSource,
+	type AnalysisMode,
+	type CircuitComponent,
+	type CircuitDocument,
+	type GridPoint,
+	type NodePinAttachment,
+	type Rotation,
+	type ValidationDiagnostic
 } from './types';
 import { parseComplexValue, parseEngineeringNumber } from './units';
 
@@ -113,13 +118,17 @@ export function getPinPositions(comp: CircuitComponent): PinPosition[] {
 	}
 
 	const pin0Name =
-		comp.kind === 'voltage_source' || comp.kind === 'voltmeter'
+		comp.kind === 'voltage_source' ||
+		comp.kind === 'voltmeter' ||
+		isDependentSourceKind(comp.kind)
 			? '+'
 			: comp.kind === 'current_source'
 				? 'in'
 				: 'a';
 	const pin1Name =
-		comp.kind === 'voltage_source' || comp.kind === 'voltmeter'
+		comp.kind === 'voltage_source' ||
+		comp.kind === 'voltmeter' ||
+		isDependentSourceKind(comp.kind)
 			? '-'
 			: comp.kind === 'current_source'
 				? 'out'
@@ -406,6 +415,91 @@ export function parseSourceValue(comp: CircuitComponent, mode: AnalysisMode): Co
 }
 
 /**
+ * Parses a dependent source's scalar (DC) or complex/phasor (AC) gain
+ * (A_v, g_m, r_m, or beta) from `comp.value` or `comp.controlRef?.gain`.
+ * Note: Returns the nominal gain before multiplying by `controlPolarity`.
+ */
+export function parseDependentGain(comp: CircuitComponent, mode: AnalysisMode): Complex | null {
+	const rawFromValue = comp.value?.trim() ?? '';
+	const rawGain = comp.controlRef?.gain;
+	let raw = rawFromValue;
+
+	if (raw === '' && rawGain !== undefined) {
+		if (typeof rawGain === 'number') {
+			if (!Number.isFinite(rawGain)) return null;
+			if (mode === 'ac' && comp.phaseDeg !== undefined && Number.isFinite(comp.phaseDeg)) {
+				return Complex.fromPolar(rawGain, comp.phaseDeg);
+			}
+			return Complex.from(rawGain, 0);
+		}
+		raw = rawGain.trim();
+	}
+
+	if (raw === '' && comp.numericValue !== undefined) {
+		if (!Number.isFinite(comp.numericValue)) return null;
+		if (mode === 'ac' && comp.phaseDeg !== undefined && Number.isFinite(comp.phaseDeg)) {
+			return Complex.fromPolar(comp.numericValue, comp.phaseDeg);
+		}
+		return Complex.from(comp.numericValue, 0);
+	}
+
+	if (!raw) return null;
+
+	const parsed = parseComplexValue(raw);
+	if (!parsed || !parsed.isFinite()) return null;
+
+	if (mode === 'dc') {
+		if (!parsed.isReal(1e-12)) return null;
+		return Complex.from(parsed.re, 0);
+	}
+
+	const hasExplicitAngleOrJ = /[∠@<j]/i.test(raw);
+	if (!hasExplicitAngleOrJ && comp.phaseDeg !== undefined && Number.isFinite(comp.phaseDeg)) {
+		return Complex.fromPolar(parsed.re, comp.phaseDeg);
+	}
+
+	return parsed;
+}
+
+/**
+ * Resolves the controlling positive and negative electrical node IDs for a VCVS or VCCS.
+ * Prefers `controlComponentId` (V_ctrl = V_pin0 - V_pin1) if set; otherwise uses
+ * explicit `controlNodePos` and `controlNodeNeg`.
+ */
+export function resolveDependentControlNodes(
+	comp: CircuitComponent,
+	graph: ElectricalGraph
+): { ctrlPos: string; ctrlNeg: string } | null {
+	const ref = comp.controlRef;
+	if (!ref) return null;
+
+	if (ref.controlComponentId) {
+		const target = graph.doc.components.find((c) => c.id === ref.controlComponentId);
+		if (!target || target.kind === 'ground' || target.kind === 'terminal') {
+			return null;
+		}
+		const cNodes = graph.componentNodes[target.id];
+		if (!cNodes || cNodes.length < 2 || !cNodes[0] || !cNodes[1]) {
+			return null;
+		}
+		if (!graph.nodes[cNodes[0]] || !graph.nodes[cNodes[1]]) {
+			return null;
+		}
+		return { ctrlPos: cNodes[0], ctrlNeg: cNodes[1] };
+	}
+
+	if (ref.controlNodePos !== undefined && ref.controlNodeNeg !== undefined) {
+		const pos = ref.controlNodePos.trim();
+		const neg = ref.controlNodeNeg.trim();
+		if (pos && neg && graph.nodes[pos] && graph.nodes[neg]) {
+			return { ctrlPos: pos, ctrlNeg: neg };
+		}
+	}
+
+	return null;
+}
+
+/**
  * Parses a passive component's positive scalar value (R, L, or C).
  */
 export function parsePassiveValue(comp: CircuitComponent): number | null {
@@ -653,6 +747,62 @@ export function validateCircuitTopology(
 					nodeIds: [cNodes[0]]
 				});
 			}
+		} else if (isDependentSourceKind(comp.kind)) {
+			const gain = parseDependentGain(comp, mode);
+			if (gain === null) {
+				diagnostics.push({
+					severity: 'error',
+					code: 'INVALID_VALUE',
+					message: `${comp.label} (${comp.kind.toUpperCase()}) has an invalid ${mode.toUpperCase()} gain ("${comp.value}").`,
+					componentIds: [comp.id]
+				});
+			}
+
+			const ref = comp.controlRef;
+			if (isVoltageControlledSource(comp.kind)) {
+				const resolved = resolveDependentControlNodes(comp, graph);
+				if (!resolved) {
+					const detail = ref?.controlComponentId
+						? `controlling component "${ref.controlComponentId}" was not found or is unconnected`
+						: ref?.controlNodePos || ref?.controlNodeNeg
+							? `controlling nodes ("${ref.controlNodePos ?? ''}", "${ref.controlNodeNeg ?? ''}") are not valid circuit nodes`
+							: 'missing controlling component or controlling node pair';
+					diagnostics.push({
+						severity: 'error',
+						code: 'INVALID_DEPENDENT_CONTROL',
+						message: `${comp.label} (${comp.kind.toUpperCase()}): ${detail}. Select a valid controlling element or node pair.`,
+						componentIds: [comp.id]
+					});
+				}
+			} else if (isCurrentControlledSource(comp.kind)) {
+				const branchId = ref?.controlBranchComponentId;
+				const target = branchId ? doc.components.find((c) => c.id === branchId) : undefined;
+				const validTarget =
+					target !== undefined &&
+					target.kind !== 'ground' &&
+					target.kind !== 'terminal' &&
+					target.kind !== 'voltmeter';
+				if (!validTarget) {
+					diagnostics.push({
+						severity: 'error',
+						code: 'INVALID_DEPENDENT_CONTROL',
+						message: branchId
+							? `${comp.label} (${comp.kind.toUpperCase()}): controlling branch "${branchId}" was not found or cannot carry current.`
+							: `${comp.label} (${comp.kind.toUpperCase()}): missing controlling branch component.`,
+						componentIds: [comp.id]
+					});
+				}
+			}
+
+			if (isDependentCurrentSource(comp.kind) && cNodes.length === 2 && cNodes[0] === cNodes[1]) {
+				diagnostics.push({
+					severity: 'warning',
+					code: 'SHORTED_COMPONENT',
+					message: `Dependent current source ${comp.label} is shorted across node ${cNodes[0]}.`,
+					componentIds: [comp.id],
+					nodeIds: [cNodes[0]]
+				});
+			}
 		}
 	}
 
@@ -683,7 +833,10 @@ export function validateCircuitTopology(
 	// 1. Check for voltage-source / DC-inductor loops (zero-impedance cycles)
 	const ufZero = new UnionFind(allNodeIds.length);
 	const zeroBranches = activeComponents.filter(
-		(c) => c.kind === 'voltage_source' || (mode === 'dc' && c.kind === 'inductor')
+		(c) =>
+			c.kind === 'voltage_source' ||
+			isDependentVoltageSource(c.kind) ||
+			(mode === 'dc' && c.kind === 'inductor')
 	);
 
 	for (const zb of zeroBranches) {
@@ -692,8 +845,8 @@ export function validateCircuitTopology(
 		const iA = nodeIdx.get(nA)!;
 		const iB = nodeIdx.get(nB)!;
 		if (nA === nB) {
-			// Inductor self-short already reported above; voltage_source self-short reported here
-			if (zb.kind === 'voltage_source') {
+			// Inductor self-short already reported above; voltage source self-short reported here
+			if (zb.kind === 'voltage_source' || isDependentVoltageSource(zb.kind)) {
 				diagnostics.push({
 					severity: 'error',
 					code: 'VOLTAGE_SOURCE_LOOP',
@@ -723,7 +876,7 @@ export function validateCircuitTopology(
 
 	const ufNoCS = new UnionFind(allNodeIds.length);
 	for (const comp of activeComponents) {
-		if (comp.kind === 'current_source') continue;
+		if (comp.kind === 'current_source' || isDependentCurrentSource(comp.kind)) continue;
 		if (mode === 'dc' && comp.kind === 'capacitor') continue;
 		const [nA, nB] = componentNodes[comp.id] ?? [];
 		if (!nA || !nB) continue;
@@ -746,7 +899,7 @@ export function validateCircuitTopology(
 		const clusterSet = new Set(clusterNodes);
 		const touchingCurrentSources = activeComponents.filter(
 			(c) =>
-				c.kind === 'current_source' &&
+				(c.kind === 'current_source' || isDependentCurrentSource(c.kind)) &&
 				(componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid))
 		);
 

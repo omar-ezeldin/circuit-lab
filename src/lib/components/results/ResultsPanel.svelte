@@ -132,6 +132,7 @@
 		{/if}
 
 		{#if solution.mna.valid}
+			{#if !solution.mna.multiFrequencyHz}
 			<!-- 1. Direct Final Answers First -->
 			<FinalAnswersCard
 				{solution}
@@ -170,8 +171,9 @@
 					{/if}
 				</section>
 			{/if}
+			{/if}
 
-			<!-- 3. Step-by-Step Review Below -->
+			<!-- 3. Step-by-Step Review Below (Superposition is the valid method for mixed frequencies) -->
 			<MethodStepsPanel {solution} bind:activeMethod />
 		{/if}
 	{/if}

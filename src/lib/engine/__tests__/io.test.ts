@@ -996,5 +996,99 @@ Let me know if you want node voltages calculated!`;
 		expect(solvedAgain.mna.branches[vm!.id].voltage.re).toBeCloseTo(8, 9);
 		expect(solvedAgain.allVerified).toBe(true);
 	});
+
+	it('imports dependent sources (VCVS & CCCS) from AI netlist resolving controlRef by label and round-trips JSON', () => {
+		const aiNetlistDep = JSON.stringify({
+			schemaVersion: 1,
+			name: 'Dependent Source VCVS Test',
+			mode: 'dc',
+			unitSystem: 'kohm-v-ma',
+			elements: [
+				{
+					id: 'V1',
+					kind: 'voltage_source',
+					label: 'Vs',
+					from: 'N1',
+					to: '0',
+					fromPos: [0, 0],
+					toPos: [0, 1],
+					value: '16'
+				},
+				{
+					id: 'R1',
+					kind: 'resistor',
+					label: 'R_sense',
+					from: 'N1',
+					to: 'N2',
+					fromPos: [0, 0],
+					toPos: [1, 0],
+					value: '4k'
+				},
+				{
+					id: 'R2',
+					kind: 'resistor',
+					label: 'R2',
+					from: 'N2',
+					to: '0',
+					fromPos: [1, 0],
+					toPos: [1, 1],
+					value: '4k'
+				},
+				{
+					id: 'R3',
+					kind: 'resistor',
+					label: 'R3',
+					from: 'N2',
+					to: 'N3',
+					fromPos: [1, 0],
+					toPos: [2, 0],
+					value: '2k'
+				},
+				{
+					id: 'E1',
+					kind: 'vcvs',
+					label: 'E1',
+					from: 'N3',
+					to: '0',
+					fromPos: [2, 0],
+					toPos: [2, 1],
+					value: '2',
+					controlRef: {
+						controlComponentId: 'R_sense',
+						controlPolarity: 1,
+						controlVarName: 'v_x',
+						gain: '2'
+					}
+				}
+			]
+		});
+
+		const imported = parseCircuitImport(aiNetlistDep);
+		expect(imported.ok).toBe(true);
+		if (!imported.ok) return;
+
+		const e1 = imported.document.components.find((c) => c.id === 'E1');
+		expect(e1?.kind).toBe('vcvs');
+		expect(e1?.controlRef?.controlComponentId).toBe('R1');
+		expect(e1?.controlRef?.controlVarName).toBe('v_x');
+
+		const solved = solveCircuit(imported.document);
+		expect(solved.mna.valid).toBe(true);
+		expect(solved.mna.branches['R2'].voltage.re).toBeCloseTo(10, 9);
+		expect(solved.mna.branches['E1'].voltage.re).toBeCloseTo(12, 9);
+		expect(solved.allVerified).toBe(true);
+
+		const exported = exportCircuitJson(imported.document);
+		expect(exported).toContain('"kind": "vcvs"');
+		expect(exported).toContain('"controlComponentId": "R1"');
+
+		const reimported = parseCircuitImport(exported);
+		expect(reimported.ok).toBe(true);
+		if (!reimported.ok) return;
+		const solvedAgain = solveCircuit(reimported.document);
+		expect(solvedAgain.mna.valid).toBe(true);
+		expect(solvedAgain.mna.branches['R2'].voltage.re).toBeCloseTo(10, 9);
+		expect(solvedAgain.allVerified).toBe(true);
+	});
 });
 

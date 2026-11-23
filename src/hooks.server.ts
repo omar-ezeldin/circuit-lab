@@ -11,8 +11,12 @@ function buildGtagSnippet(measurementId: string): string {
 		'\t\t<script>',
 		'\t\t  window.dataLayer = window.dataLayer || [];',
 		'\t\t  function gtag(){dataLayer.push(arguments);}',
+		// Storage starts denied (cookieless). AnalyticsConsent grants analytics_storage if the visitor
+		// allows it; ads storage always stays denied. Never send the circuit name (page title) or the
+		// #c=... share payload.
+		"\t\t  gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });",
 		"\t\t  gtag('js', new Date());",
-		`\t\t  gtag('config', '${measurementId}');`,
+		`\t\t  gtag('config', '${measurementId}', { page_title: 'Circuit Lab', page_location: location.origin + location.pathname, allow_google_signals: false, allow_ad_personalization_signals: false });`,
 		'\t\t</script>'
 	].join('\n');
 }

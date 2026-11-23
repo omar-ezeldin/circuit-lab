@@ -206,7 +206,7 @@ describe('circuit reactive store', () => {
 			nodeB: '0'
 		});
 		expect(circuit.emptyBannerDismissed).toBe(false);
-		expect(circuit.theveninTarget).toEqual({ kind: 'terminals', nodeA: 'N1', nodeB: '0' });
+		expect(circuit.theveninTarget).toMatchObject({ kind: 'terminals', nodeA: 'N1', nodeB: '0' });
 
 		// Loading with component TheveninTarget
 		circuit.loadDocument(PRESETS[0].document, {
@@ -314,6 +314,50 @@ describe('circuit reactive store', () => {
 		// Deleting last remaining unknown component V2 clears unknownProblem
 		circuit.deleteComponent('V2');
 		expect(circuit.document.unknownProblem).toBeUndefined();
+	});
+
+	it('keeps node-voltage and terminal targets on the same physical node when nodes are renumbered', () => {
+		// dc-divider preset: target the node on R3's top pin
+		const nodeBefore = circuit.graph.componentNodes['R3'][0];
+		circuit.setUnknownProblem({
+			componentId: 'V1',
+			symbol: 'V',
+			constraint: { kind: 'node_voltage', targetId: nodeBefore, value: '8' }
+		});
+		const groundNode = circuit.graph.componentNodes['G1'][0];
+		circuit.setTheveninTerminals(nodeBefore, groundNode);
+
+		// A part placed above everything becomes the topmost node and shifts N1, N2, ...
+		circuit.addComponent('resistor', 4, -10);
+		const nodeAfter = circuit.graph.componentNodes['R3'][0];
+		expect(nodeAfter).not.toBe(nodeBefore);
+		expect(circuit.document.unknownProblem!.constraint.targetId).toBe(nodeAfter);
+		const tt = circuit.theveninTarget;
+		expect(tt?.kind === 'terminals' && tt.nodeA).toBe(nodeAfter);
+
+		// Deleting the anchor component moves the anchor to another pin of the same node
+		const r2Top = circuit.graph.componentNodes['R2'][0];
+		expect(r2Top).toBe(nodeAfter); // R2 and R3 share the top node
+		circuit.deleteComponent('R3');
+		expect(circuit.document.unknownProblem!.constraint.targetId).toBe(
+			circuit.graph.componentNodes['R2'][0]
+		);
+	});
+
+	it('rejects duplicate labels (including ones that render the same) and keeps Thévenin changes in undo history', () => {
+		expect(circuit.updateComponent('R2', { label: 'R1' })).toBe(false);
+		expect(circuit.updateComponent('R2', { label: 'R-1' })).toBe(false); // renders as R_1
+		expect(circuit.document.components.find((c) => c.id === 'R2')!.label).toBe('R2');
+		expect(circuit.updateComponent('R2', { label: 'Rload' })).toBe(true);
+
+		expect(circuit.theveninTarget).toEqual({ kind: 'component', componentId: 'R3' });
+		circuit.updateComponent('R1', { value: '3k' });
+		circuit.setTheveninComponent('R2');
+		circuit.undo(); // undoes only the target change
+		expect(circuit.theveninTarget).toEqual({ kind: 'component', componentId: 'R3' });
+		expect(circuit.document.components.find((c) => c.id === 'R1')!.value).toBe('3k');
+		circuit.redo();
+		expect(circuit.theveninTarget).toEqual({ kind: 'component', componentId: 'R2' });
 	});
 
 	it('auto-wires unlinked components into a valid MNA solution and restores unwired state in a single undo step', () => {

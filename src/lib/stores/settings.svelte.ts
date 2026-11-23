@@ -82,7 +82,13 @@ function sanitizeSettings(raw: unknown): CircuitLabSettings {
 }
 
 function canUseLocalStorage(): boolean {
-	return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+	// Reading window.localStorage itself throws a SecurityError when site data is blocked
+	// (or in sandboxed iframes); that must not white-screen the app at module load.
+	try {
+		return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+	} catch {
+		return false;
+	}
 }
 
 function loadPersistedSettings(): CircuitLabSettings {
@@ -127,12 +133,21 @@ class SettingsStore {
 		persistSettings(this.state);
 	}
 
+	/** Unit system carried by an opened file or share link: used for this session, never saved. */
+	private sessionUnitSystem = $state<UnitSystemId | null>(null);
+
 	get unitSystem(): UnitSystemId {
-		return this.state.unitSystem;
+		return this.sessionUnitSystem ?? this.state.unitSystem;
 	}
+	/** The user's own choice: saved, and replaces any file/link unit system. */
 	set unitSystem(value: UnitSystemId) {
+		this.sessionUnitSystem = null;
 		this.state.unitSystem = value;
 		persistSettings(this.state);
+	}
+	/** Show a file/share link in its own unit system without overwriting the saved preference. */
+	useUnitSystemForSession(value: UnitSystemId): void {
+		this.sessionUnitSystem = value;
 	}
 
 	get angleDisplay(): AngleDisplay {
@@ -204,6 +219,7 @@ class SettingsStore {
 
 	/** Restores all settings to their canonical defaults and persists. */
 	reset(): void {
+		this.sessionUnitSystem = null;
 		this.state = { ...DEFAULT_SETTINGS };
 		persistSettings(this.state);
 	}

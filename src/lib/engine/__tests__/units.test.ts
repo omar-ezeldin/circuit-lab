@@ -225,3 +225,23 @@ describe('units', () => {
 		expect(formatEngineeringWithSystem(1000, 'Hz', 3, 'ohm-v-a')).toBe('1 kHz');
 	});
 });
+
+describe('pasted text and resistor-code values', () => {
+	it('accepts Unicode minus/dashes and 4k7-style values', () => {
+		expect(parseEngineeringNumber('−5')).toBe(-5);
+		expect(parseEngineeringNumber('4k7')).toBeCloseTo(4700, 9);
+		expect(parseEngineeringNumber('2M2')).toBeCloseTo(2.2e6, 3);
+		expect(parseEngineeringNumber('4R7')).toBeCloseTo(4.7, 12);
+		expect(parseEngineeringNumber('1m5')).toBeCloseTo(1.5e-3, 12);
+		const polar = parseComplexValue('10∠−30°')!;
+		expect(polar.argDeg()).toBeCloseTo(-30, 9);
+		const rect = parseComplexValue('3 − j4')!;
+		expect(rect.re).toBeCloseTo(3, 12);
+		expect(rect.im).toBeCloseTo(-4, 12);
+		// unchanged behaviour
+		expect(parseEngineeringNumber('1M')).toBe(1e6);
+		expect(parseEngineeringNumber('1m')).toBe(1e-3);
+		expect(parseEngineeringNumber('1meg')).toBe(1e6);
+		expect(parseEngineeringNumber('4.7k')).toBeCloseTo(4700, 9);
+	});
+});

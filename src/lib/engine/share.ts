@@ -54,10 +54,19 @@ function compactComponent(c: CircuitComponent): Record<string, unknown> {
 	if (c.terminalName !== undefined) out.terminalName = c.terminalName;
 	if (c.controlRef !== undefined) {
 		const ref: Record<string, unknown> = {};
+		if (c.controlRef.controlComponentId !== undefined) {
+			ref.controlComponentId = c.controlRef.controlComponentId;
+		}
 		if (c.controlRef.controlNodePos !== undefined) ref.controlNodePos = c.controlRef.controlNodePos;
 		if (c.controlRef.controlNodeNeg !== undefined) ref.controlNodeNeg = c.controlRef.controlNodeNeg;
 		if (c.controlRef.controlBranchComponentId !== undefined) {
 			ref.controlBranchComponentId = c.controlRef.controlBranchComponentId;
+		}
+		if (c.controlRef.controlPolarity !== undefined) {
+			ref.controlPolarity = c.controlRef.controlPolarity;
+		}
+		if (c.controlRef.controlVarName !== undefined) {
+			ref.controlVarName = c.controlRef.controlVarName;
 		}
 		if (c.controlRef.gain !== undefined) ref.gain = c.controlRef.gain;
 		if (Object.keys(ref).length > 0) {

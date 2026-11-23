@@ -10,17 +10,19 @@
 import { Complex } from '../complex';
 import { buildElectricalGraph, parseSourceValue } from '../graph';
 import { solveMNA } from '../mna';
-import type {
-	CircuitComponent,
-	CircuitDocument,
-	MethodResult,
-	MnaSolution,
-	SolutionStep
+import {
+	isDependentSourceKind,
+	type CircuitComponent,
+	type CircuitDocument,
+	type MethodResult,
+	type MnaSolution,
+	type SolutionStep
 } from '../types';
 import {
 	buildDeactivatedDocument,
 	formatLatexValue,
 	latexSub,
+	remapDependentControlNodes,
 	verifyAgainstMna
 } from './shared';
 
@@ -29,32 +31,39 @@ function mapSubNodesToOriginal(
 	subGraph: ReturnType<typeof buildElectricalGraph>,
 	subSol: MnaSolution
 ): Record<string, Complex> {
+	// Sub-circuit voltage at the node matching an original node (by shared pin, else grid point)
+	const lookup = (origNode: (typeof origGraph.nodes)[string]): Complex | undefined => {
+		for (const pin of origNode.componentPins) {
+			const subCompNodes = subGraph.componentNodes[pin.componentId];
+			if (subCompNodes && subCompNodes[pin.pinIndex]) {
+				const v = subSol.nodeVoltages[subCompNodes[pin.pinIndex]]?.voltage;
+				if (v) return v;
+			}
+		}
+		if (origNode.gridPoints.length > 0) {
+			const gp = origNode.gridPoints[0];
+			for (const [subNid, subNode] of Object.entries(subGraph.nodes)) {
+				if (subNode.gridPoints.some((p) => p.x === gp.x && p.y === gp.y)) {
+					return subSol.nodeVoltages[subNid]?.voltage;
+				}
+			}
+		}
+		return undefined;
+	};
+
+	// Without a ground symbol each sub-circuit auto-picks its own reference node, which can differ
+	// from the original one. Re-reference every sub-solution to the original reference "0".
+	const origRef = origGraph.nodes['0'];
+	const refOffset = (origRef && lookup(origRef)) ?? Complex.zero();
+
 	const mapped: Record<string, Complex> = {};
 	for (const [origNodeId, origNode] of Object.entries(origGraph.nodes)) {
 		if (origNodeId === '0') {
 			mapped[origNodeId] = Complex.zero();
 			continue;
 		}
-		// Match by any shared grid point or component pin
-		let foundVoltage: Complex | undefined;
-		for (const pin of origNode.componentPins) {
-			const subCompNodes = subGraph.componentNodes[pin.componentId];
-			if (subCompNodes && subCompNodes[pin.pinIndex]) {
-				const subNid = subCompNodes[pin.pinIndex];
-				foundVoltage = subSol.nodeVoltages[subNid]?.voltage;
-				if (foundVoltage) break;
-			}
-		}
-		if (!foundVoltage && origNode.gridPoints.length > 0) {
-			const gp = origNode.gridPoints[0];
-			for (const [subNid, subNode] of Object.entries(subGraph.nodes)) {
-				if (subNode.gridPoints.some((p) => p.x === gp.x && p.y === gp.y)) {
-					foundVoltage = subSol.nodeVoltages[subNid]?.voltage;
-					break;
-				}
-			}
-		}
-		mapped[origNodeId] = foundVoltage ?? Complex.zero();
+		const v = lookup(origNode);
+		mapped[origNodeId] = v ? v.sub(refOffset) : Complex.zero();
 	}
 	return mapped;
 }
@@ -114,10 +123,17 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 		totalBranchI[comp.id] = Complex.zero();
 	}
 
+	const dependentSources = doc.components.filter((c) => isDependentSourceKind(c.kind));
+	const depLabels = dependentSources.map((d) => d.label).join(', ');
+	const depRuleNote =
+		dependentSources.length > 0
+			? ` Dependent source(s) (${depLabels}) are NEVER deactivated and remain active in every sub-circuit.`
+			: '';
+
 	const steps: SolutionStep[] = [
 		{
 			title: '1. Identify Independent Sources',
-			description: `Found ${sources.length} independent source(s). Solve one source at a time while zeroing other voltage sources (short circuit) and opening other current sources.`,
+			description: `Found ${sources.length} independent source(s). Solve one independent source at a time while zeroing other independent voltage sources (short circuit) and opening other independent current sources.${depRuleNote}`,
 			latex: sources.map((s) => {
 				const subMode = sourceFreq(s) === 0 ? 'dc' : mna.mode;
 				const val = parseSourceValue(s, subMode)!;
@@ -137,12 +153,13 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 		const activeSrc = sources[k];
 		const fK = sourceFreq(activeSrc);
 		const subMode = mna.mode === 'ac' && fK === 0 ? 'dc' : mna.mode;
-		const subDoc = buildDeactivatedDocument(
+		const rawSubDoc = buildDeactivatedDocument(
 			doc,
 			activeSrc.id,
 			subMode,
 			subMode === 'dc' ? doc.frequencyHz : fK
 		);
+		const subDoc = remapDependentControlNodes(origGraph, rawSubDoc);
 		const subGraph = buildElectricalGraph(subDoc);
 		const subSol = solveMNA(subDoc, {
 			frequencyHz: subDoc.frequencyHz,
@@ -206,7 +223,7 @@ export function solveSuperposition(doc: CircuitDocument, mna: MnaSolution): Meth
 
 		steps.push({
 			title: `${k + 2}. Contribution of ${activeSrc.label} Alone`,
-			description: `Keep ${activeSrc.label} active${isMultiFreq ? ` at f = ${fK} Hz` : ''}; deactivate all other independent sources.`,
+			description: `Keep ${activeSrc.label} active${isMultiFreq ? ` at f = ${fK} Hz` : ''}${dependentSources.length > 0 ? ` (with dependent source(s) ${depLabels} active)` : ''}; deactivate all other independent sources.`,
 			latex: [...contribLatex, ...branchContribLatex],
 			highlightIds: [activeSrc.id]
 		});

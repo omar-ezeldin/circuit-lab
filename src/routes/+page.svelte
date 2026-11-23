@@ -171,7 +171,7 @@
 		}
 		acComingSoonNotice = null;
 		if (doc.unitSystem) {
-			settings.unitSystem = doc.unitSystem;
+			settings.useUnitSystemForSession(doc.unitSystem);
 		}
 		circuit.loadDocument(doc);
 		rightTab = 'results';
@@ -217,7 +217,7 @@
 		acComingSoonNotice = null;
 		const effectiveUnitSystem = payload.unitSystem ?? payload.document.unitSystem;
 		if (effectiveUnitSystem) {
-			settings.unitSystem = effectiveUnitSystem;
+			settings.useUnitSystemForSession(effectiveUnitSystem);
 		}
 		circuit.loadDocument(payload.document, payload.theveninTarget);
 		rightTab = 'results';

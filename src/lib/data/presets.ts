@@ -1,5 +1,5 @@
 /**
- * Curated library of 9 classic textbook DC & AC circuits for Circuit Lab.
+ * Curated library of 10 classic textbook DC & AC circuits for Circuit Lab.
  * All schematics use clean, non-overlapping orthogonal coordinates aligned
  * to the canonical 20 px grid (2-terminal pin offset ±2, 1-terminal pin offset 0).
  */
@@ -187,6 +187,46 @@ export const PRESETS: CircuitPreset[] = [
 				wire('w4', [18, 4], [24, 4], [24, 6]),
 				wire('w5', [20, 4], [20, 6]),
 				wire('w6', [4, 10], [24, 10])
+			]
+		}
+	},
+	{
+		id: 'dc-dependent-vcvs',
+		name: 'DC Dependent Source (VCVS)',
+		category: 'dc',
+		featuredMethod: 'nodal',
+		description:
+			'16 V source driving a resistor T-network with a Voltage-Controlled Voltage Source E1 = 2 v_x sensing R1 (exact integer solution: V_N1 = 16 V, V_N2 = 10 V, V_N3 = 12 V).',
+		theveninLoadId: 'R2',
+		document: {
+			schemaVersion: 1,
+			id: 'dc-dependent-vcvs',
+			name: 'DC Dependent Source (VCVS)',
+			mode: 'dc',
+			frequencyHz: 60,
+			unitSystem: 'kohm-v-ma',
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '16'),
+				comp('R1', 'resistor', 8, 4, 0, '4k'),
+				comp('R2', 'resistor', 12, 8, 90, '4k'),
+				comp('R3', 'resistor', 16, 4, 0, '2k'),
+				comp('E1', 'vcvs', 20, 8, 90, '2', {
+					unit: 'V/V',
+					controlRef: {
+						controlComponentId: 'R1',
+						controlPolarity: 1,
+						controlVarName: 'v_x',
+						gain: '2'
+					}
+				}),
+				comp('G1', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [14, 4]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [18, 4], [20, 4], [20, 6]),
+				wire('w5', [4, 10], [20, 10])
 			]
 		}
 	},

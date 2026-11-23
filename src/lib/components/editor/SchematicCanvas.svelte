@@ -28,6 +28,8 @@
 		getDefaultUnknownSymbol,
 		getPinPositions,
 		getUnknownTerms,
+		isDependentSourceKind,
+		isVoltageControlledSource,
 		type CircuitComponent,
 		type CircuitWire,
 		type ComponentKind,
@@ -51,6 +53,7 @@
 		findNearestAnchor,
 		formatComplexOverlay,
 		formatComponentDisplayValue,
+		formatControlVarDisplay,
 		getDragThresholdPx,
 		hasExceededDragThreshold,
 		isPointInComponentBodyHitbox,
@@ -155,7 +158,18 @@
 	let hoverSnappedPin = $state<GridPoint | null>(null);
 	let hoveredNodeId = $state<string | null>(null);
 	let hoveredCrossingKey = $state<string | null>(null);
-	let pinnedProbeNodeId = $state<string | null>(null);
+	// Pinned probe is stored as a component pin: node IDs are renumbered when the layout changes.
+	let pinnedProbeAnchor = $state<{ componentId: string; pinIndex: number } | null>(null);
+	const pinnedProbeNodeId = $derived(
+		pinnedProbeAnchor
+			? (circuit.graph.componentNodes[pinnedProbeAnchor.componentId]?.[pinnedProbeAnchor.pinIndex] ??
+					null)
+			: null
+	);
+	function pinProbeNode(nodeId: string | null): void {
+		const pin = nodeId ? circuit.graph.nodes[nodeId]?.componentPins[0] : undefined;
+		pinnedProbeAnchor = pin ? { componentId: pin.componentId, pinIndex: pin.pinIndex } : null;
+	}
 	let isTouchInteraction = $state(false);
 
 	let wireStart = $state<GridPoint | null>(null);
@@ -236,6 +250,10 @@
 		'inductor',
 		'voltage_source',
 		'current_source',
+		'vcvs',
+		'vccs',
+		'ccvs',
+		'cccs',
 		'ground',
 		'terminal',
 		'voltmeter'
@@ -766,7 +784,24 @@
 		return false;
 	}
 
+	/**
+	 * Inspector fields commit on blur, but the canvas changes the selection on pointerdown,
+	 * before the field loses focus. Blur the field first so a half-typed value is saved to the
+	 * component it was typed for, not to the one just clicked.
+	 */
+	function commitPendingFieldEdit(): void {
+		const el = typeof document !== 'undefined' ? document.activeElement : null;
+		if (
+			el instanceof HTMLInputElement ||
+			el instanceof HTMLTextAreaElement ||
+			el instanceof HTMLSelectElement
+		) {
+			el.blur();
+		}
+	}
+
 	function handleBackgroundPointerDown(e: PointerEvent): void {
+		commitPendingFieldEdit();
 		lastPointerType = e.pointerType;
 		isTouchInteraction = isTouchLikePointer(e.pointerType);
 		refreshSvgRect();
@@ -834,7 +869,7 @@
 
 		if (circuit.activeTool === 'probe') {
 			const nid = findNodeNearGrid(gx, gy, getNodeProbeDist(e.pointerType));
-			pinnedProbeNodeId = nid;
+			pinProbeNode(nid);
 			return;
 		}
 
@@ -879,6 +914,7 @@
 	}
 
 	function handleComponentPointerDown(e: PointerEvent, comp: CircuitComponent): void {
+		commitPendingFieldEdit();
 		lastPointerType = e.pointerType;
 		refreshSvgRect();
 
@@ -930,6 +966,7 @@
 		pinX: number,
 		pinY: number
 	): void {
+		commitPendingFieldEdit();
 		lastPointerType = e.pointerType;
 		refreshSvgRect();
 
@@ -972,7 +1009,7 @@
 		const pt = { x: pinX, y: pinY };
 
 		if (circuit.activeTool === 'probe') {
-			pinnedProbeNodeId = findNodeNearGrid(pinX, pinY, getNodeProbeDist(e.pointerType));
+			pinProbeNode(findNodeNearGrid(pinX, pinY, getNodeProbeDist(e.pointerType)));
 			return;
 		}
 
@@ -995,6 +1032,7 @@
 	}
 
 	function handleWirePointerDown(e: PointerEvent, wire: CircuitWire): void {
+		commitPendingFieldEdit();
 		lastPointerType = e.pointerType;
 		isTouchInteraction = isTouchLikePointer(e.pointerType);
 		refreshSvgRect();
@@ -1039,7 +1077,7 @@
 		if (circuit.activeTool === 'probe') {
 			e.stopPropagation();
 			const { gx, gy } = clientToGrid(e.clientX, e.clientY);
-			pinnedProbeNodeId = findNodeNearGrid(gx, gy, getNodeProbeDist(e.pointerType));
+			pinProbeNode(findNodeNearGrid(gx, gy, getNodeProbeDist(e.pointerType)));
 			return;
 		}
 
@@ -1068,6 +1106,7 @@
 	 * (mouse click-click or touch press-drag-release), or completes the in-progress wire there.
 	 */
 	function handleWireEndpointPointerDown(e: PointerEvent, wireId: string, pt: GridPoint): void {
+		commitPendingFieldEdit();
 		lastPointerType = e.pointerType;
 		isTouchInteraction = isTouchLikePointer(e.pointerType);
 		refreshSvgRect();
@@ -1108,6 +1147,7 @@
 	}
 
 	function handleCrossingPointerDown(e: PointerEvent, crossing: WireCrossing): void {
+		commitPendingFieldEdit();
 		lastPointerType = e.pointerType;
 		isTouchInteraction = isTouchLikePointer(e.pointerType);
 		refreshSvgRect();
@@ -1426,7 +1466,7 @@
 				circuit.setActiveTool('select');
 			} else {
 				circuit.clearSelection();
-				pinnedProbeNodeId = null;
+				pinProbeNode(null);
 			}
 			return;
 		}
@@ -1519,9 +1559,10 @@
 		displayVal: string;
 		isVoltmeterReading?: boolean;
 		isVoltmeterOpen?: boolean;
+		isDependentUnset?: boolean;
 	} {
 		if (comp.kind === 'voltmeter') {
-			const branch = circuit.solution.mna.valid ? circuit.solution.mna.branches[comp.id] : undefined;
+			const branch = circuit.solution.mna.valid && !circuit.solution.mna.multiFrequencyHz ? circuit.solution.mna.branches[comp.id] : undefined;
 			if (branch) {
 				const formattedV = formatComplexOverlay(branch.voltage, 'V', circuit.document.mode, {
 					precision: settings.precision,
@@ -1549,9 +1590,16 @@
 				(t) => t.componentId === comp.id
 			) ?? null;
 		if (!unknownTerm) {
+			const displayVal = formatComponentDisplayValue(
+				comp,
+				circuit.document.mode,
+				settings.unitSystem,
+				circuit.document.components
+			);
 			return {
 				isUnknownComp: false,
-				displayVal: formatComponentDisplayValue(comp, circuit.document.mode, settings.unitSystem)
+				displayVal,
+				isDependentUnset: isDependentSourceKind(comp.kind) && displayVal === 'Set control'
 			};
 		}
 		const unknownSym =
@@ -1688,6 +1736,55 @@
 		};
 	}
 
+	const selectedDependentControlHighlight = $derived.by(() => {
+		const sel = circuit.selectedComponent;
+		if (!sel || !isDependentSourceKind(sel.kind) || !sel.controlRef) return null;
+		const ref = sel.controlRef;
+		const isV = isVoltageControlledSource(sel.kind);
+		const rawVar = ref.controlVarName?.trim() || (isV ? 'v_x' : 'i_x');
+		const varLabel = formatControlVarDisplay(rawVar);
+		const accent = isV ? 'var(--voltage)' : 'var(--branch-current)';
+
+		const targetCompId = isV ? ref.controlComponentId : ref.controlBranchComponentId;
+		if (targetCompId) {
+			const targetComp = circuit.document.components.find((c) => c.id === targetCompId);
+			if (targetComp) {
+				return {
+					mode: 'component' as const,
+					componentId: targetComp.id,
+					varLabel,
+					accent
+				};
+			}
+		}
+
+		if (isV && (ref.controlNodePos !== undefined || ref.controlNodeNeg !== undefined)) {
+			const nodes: Array<{ nodeId: string; sign: '+' | '−'; pt: GridPoint }> = [];
+			if (ref.controlNodePos) {
+				const gNode = circuit.graph.nodes[ref.controlNodePos];
+				if (gNode && gNode.gridPoints.length > 0) {
+					nodes.push({ nodeId: ref.controlNodePos, sign: '+', pt: gNode.gridPoints[0] });
+				}
+			}
+			if (ref.controlNodeNeg) {
+				const gNode = circuit.graph.nodes[ref.controlNodeNeg];
+				if (gNode && gNode.gridPoints.length > 0) {
+					nodes.push({ nodeId: ref.controlNodeNeg, sign: '−', pt: gNode.gridPoints[0] });
+				}
+			}
+			if (nodes.length > 0) {
+				return {
+					mode: 'nodes' as const,
+					nodes,
+					varLabel,
+					accent
+				};
+			}
+		}
+
+		return null;
+	});
+
 	interface NodeOverlayItem {
 		nodeId: string;
 		xPx: number;
@@ -1711,7 +1808,7 @@
 	}
 
 	const overlayLayout = $derived.by<{ nodes: NodeOverlayItem[]; branches: BranchOverlayItem[] }>(() => {
-		if (!settings.showLiveOverlays || !circuit.solution.mna.valid) {
+		if (!settings.showLiveOverlays || !circuit.solution.mna.valid || circuit.solution.mna.multiFrequencyHz) {
 			return { nodes: [], branches: [] };
 		}
 
@@ -1860,7 +1957,7 @@
 
 	const probedNodeData = $derived.by(() => {
 		const nid = hoveredNodeId ?? pinnedProbeNodeId;
-		if (!nid || !circuit.solution.mna.valid) return null;
+		if (!nid || !circuit.solution.mna.valid || circuit.solution.mna.multiFrequencyHz) return null;
 		const res = circuit.solution.mna.nodeVoltages[nid];
 		if (!res) return null;
 		return {
@@ -1880,6 +1977,10 @@
 <svelte:window
 	onkeydown={handleKeyDown}
 	onkeyup={handleKeyUp}
+	onblur={() => {
+		// The Space keyup never arrives if the window loses focus while Space is held
+		spaceHeld = false;
+	}}
 	onpointerup={(e) => {
 		if (activePointers.has(e.pointerId)) {
 			handlePointerUp(e);
@@ -1889,6 +1990,12 @@
 		if (activePointers.has(e.pointerId)) {
 			handlePointerCancel(e);
 		}
+	}}
+/>
+
+<svelte:document
+	onvisibilitychange={() => {
+		if (document.hidden) spaceHeld = false;
 	}}
 />
 
@@ -2482,6 +2589,43 @@
 							stroke-dasharray="4 3"
 							pointer-events="none"
 						/>
+					{:else if selectedDependentControlHighlight?.mode === 'component' && selectedDependentControlHighlight.componentId === comp.id}
+						{@const ctrlRect = getSelectionRect(renderComp)}
+						<g pointer-events="none" data-control-highlight={comp.id}>
+							<rect
+								x={ctrlRect.x - 2}
+								y={ctrlRect.y - 2}
+								width={ctrlRect.width + 4}
+								height={ctrlRect.height + 4}
+								rx="4"
+								fill={selectedDependentControlHighlight.accent}
+								fill-opacity="0.06"
+								stroke={selectedDependentControlHighlight.accent}
+								stroke-width="1.5"
+								stroke-dasharray="3 2.5"
+							/>
+							<rect
+								x={ctrlRect.x + ctrlRect.width - 20}
+								y={ctrlRect.y - 16}
+								width="24"
+								height="13"
+								rx="3"
+								fill="var(--card)"
+								stroke={selectedDependentControlHighlight.accent}
+								stroke-width="1"
+							/>
+							<text
+								x={ctrlRect.x + ctrlRect.width - 8}
+								y={ctrlRect.y - 6.5}
+								text-anchor="middle"
+								fill={selectedDependentControlHighlight.accent}
+								font-family="var(--font-mono)"
+								font-size="9"
+								font-weight="600"
+							>
+								{selectedDependentControlHighlight.varLabel}
+							</text>
+						</g>
 					{/if}
 
 					<!-- Invisible generous click hitbox -->
@@ -2536,12 +2680,13 @@
 									? displayMeta.isVoltmeterOpen
 										? 'var(--muted-foreground)'
 										: 'var(--voltage)'
-									: isUnknownComp
+									: isUnknownComp || displayMeta.isDependentUnset
 										? 'var(--warning)'
 										: 'var(--muted-foreground)'}
 								font-family="var(--font-mono)"
 								font-size={displayMeta.isVoltmeterReading ? '10.5' : '10'}
 								font-weight={isUnknownComp ||
+								displayMeta.isDependentUnset ||
 								(displayMeta.isVoltmeterReading && !displayMeta.isVoltmeterOpen)
 									? '600'
 									: undefined}
@@ -2750,6 +2895,47 @@
 					</g>
 				</g>
 			{/each}
+
+			<!-- Dependent Source Controlling Node Highlights (painted above node/branch overlay pills) -->
+			{#if selectedDependentControlHighlight?.mode === 'nodes'}
+				<g pointer-events="none" data-control-nodes-highlight="true">
+					{#each selectedDependentControlHighlight.nodes as nodeHl (`${nodeHl.nodeId}-${nodeHl.sign}`)}
+						<g transform="translate({nodeHl.pt.x * GRID_SIZE}, {nodeHl.pt.y * GRID_SIZE})">
+							<circle
+								cx="0"
+								cy="0"
+								r="10"
+								fill={selectedDependentControlHighlight.accent}
+								fill-opacity="0.08"
+								stroke={selectedDependentControlHighlight.accent}
+								stroke-width="1.5"
+								stroke-dasharray="3 2"
+							/>
+							<rect
+								x="8"
+								y="6"
+								width="14"
+								height="13"
+								rx="3"
+								fill="var(--card)"
+								stroke={selectedDependentControlHighlight.accent}
+								stroke-width="1"
+							/>
+							<text
+								x="15"
+								y="15.5"
+								text-anchor="middle"
+								fill={selectedDependentControlHighlight.accent}
+								font-family="var(--font-mono)"
+								font-size="10"
+								font-weight="700"
+							>
+								{nodeHl.sign}
+							</text>
+						</g>
+					{/each}
+				</g>
+			{/if}
 		</g>
 	</svg>
 
@@ -2853,7 +3039,7 @@
 						<SlidersHorizontal class="size-3.5" aria-hidden="true" />
 						<span>Edit</span>
 					</Button>
-					{#if isTwoTerminal}
+					{#if selectedComp.kind === 'resistor' || selectedComp.kind === 'capacitor' || selectedComp.kind === 'inductor'}
 						<Button
 							variant={isTheveninActive ? 'secondary' : 'ghost'}
 							size="sm"

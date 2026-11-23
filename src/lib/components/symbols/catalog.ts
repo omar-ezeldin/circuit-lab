@@ -4,6 +4,10 @@ export type SymbolKind =
 	| 'inductor'
 	| 'voltage_source'
 	| 'current_source'
+	| 'vcvs'
+	| 'vccs'
+	| 'ccvs'
+	| 'cccs'
 	| 'ground'
 	| 'terminal'
 	| 'voltmeter'
@@ -13,7 +17,7 @@ export type SymbolKind =
 export type SymbolVariant = 'icon' | 'schematic';
 export type SymbolRotation = 0 | 90 | 180 | 270;
 export type SourceMode = 'dc' | 'ac';
-export type PaletteCategory = 'sources' | 'passives' | 'connections';
+export type PaletteCategory = 'sources' | 'dependent' | 'passives' | 'connections';
 
 export interface PinGridOffset {
 	name: string;
@@ -87,6 +91,10 @@ export const COMPONENT_PINS: Record<SymbolKind, ReadonlyArray<PinGridOffset>> = 
 	inductor: TWO_TERMINAL_PASSIVE_PINS,
 	voltage_source: TWO_TERMINAL_SOURCE_PINS,
 	current_source: TWO_TERMINAL_SOURCE_PINS,
+	vcvs: TWO_TERMINAL_SOURCE_PINS,
+	vccs: TWO_TERMINAL_SOURCE_PINS,
+	ccvs: TWO_TERMINAL_SOURCE_PINS,
+	cccs: TWO_TERMINAL_SOURCE_PINS,
 	voltmeter: TWO_TERMINAL_SOURCE_PINS,
 	ground: GROUND_PINS,
 	terminal: ONE_TERMINAL_PINS,
@@ -137,6 +145,42 @@ export const SYMBOL_PIN_OFFSETS: Record<SymbolKind, SymbolGeometrySpec> = {
 		]
 	},
 	current_source: {
+		viewBox: '-40 -20 80 40',
+		width: 80,
+		height: 40,
+		pins: [
+			{ name: '+', x: -40, y: 0 },
+			{ name: '-', x: 40, y: 0 }
+		]
+	},
+	vcvs: {
+		viewBox: '-40 -20 80 40',
+		width: 80,
+		height: 40,
+		pins: [
+			{ name: '+', x: -40, y: 0 },
+			{ name: '-', x: 40, y: 0 }
+		]
+	},
+	vccs: {
+		viewBox: '-40 -20 80 40',
+		width: 80,
+		height: 40,
+		pins: [
+			{ name: '+', x: -40, y: 0 },
+			{ name: '-', x: 40, y: 0 }
+		]
+	},
+	ccvs: {
+		viewBox: '-40 -20 80 40',
+		width: 80,
+		height: 40,
+		pins: [
+			{ name: '+', x: -40, y: 0 },
+			{ name: '-', x: 40, y: 0 }
+		]
+	},
+	cccs: {
 		viewBox: '-40 -20 80 40',
 		width: 80,
 		height: 40,
@@ -254,6 +298,54 @@ export const PALETTE_ITEMS: ReadonlyArray<PaletteItem> = [
 		defaultInput: '10m',
 		unit: 'A',
 		description: 'Independent current source (arrow points pin 0 -> pin 1)'
+	},
+	{
+		id: 'vcvs',
+		label: 'VCVS',
+		name: 'VCVS (V → V)',
+		shortcut: '',
+		category: 'dependent',
+		kind: 'vcvs',
+		defaultValue: 2,
+		defaultInput: '2',
+		unit: 'V/V',
+		description: 'Voltage-Controlled Voltage Source (E = A_v · v_x)'
+	},
+	{
+		id: 'vccs',
+		label: 'VCCS',
+		name: 'VCCS (V → I)',
+		shortcut: '',
+		category: 'dependent',
+		kind: 'vccs',
+		defaultValue: 1,
+		defaultInput: '1m',
+		unit: 'S',
+		description: 'Voltage-Controlled Current Source (G = g_m · v_x)'
+	},
+	{
+		id: 'ccvs',
+		label: 'CCVS',
+		name: 'CCVS (I → V)',
+		shortcut: '',
+		category: 'dependent',
+		kind: 'ccvs',
+		defaultValue: 1,
+		defaultInput: '1k',
+		unit: 'Ω',
+		description: 'Current-Controlled Voltage Source (H = r_m · i_x)'
+	},
+	{
+		id: 'cccs',
+		label: 'CCCS',
+		name: 'CCCS (I → I)',
+		shortcut: '',
+		category: 'dependent',
+		kind: 'cccs',
+		defaultValue: 2,
+		defaultInput: '2',
+		unit: 'A/A',
+		description: 'Current-Controlled Current Source (F = β · i_x)'
 	},
 	{
 		id: 'resistor',

@@ -15,7 +15,13 @@
  */
 
 import { buildElectricalGraph, getPinPositions } from './graph';
-import type { CircuitDocument, CircuitWire, ComponentKind, GridPoint } from './types';
+import {
+	isDependentVoltageSource,
+	type CircuitDocument,
+	type CircuitWire,
+	type ComponentKind,
+	type GridPoint
+} from './types';
 
 export interface AutoWireResult {
 	wires: CircuitWire[];
@@ -587,7 +593,9 @@ export function autoWireDocument(doc: CircuitDocument): AutoWireResult {
 		const adj = new Map<number, number[]>();
 		for (const pair of twoTerminalPairs) {
 			const isZeroImpedance =
-				pair.kind === 'voltage_source' || (doc.mode === 'dc' && pair.kind === 'inductor');
+				pair.kind === 'voltage_source' ||
+				isDependentVoltageSource(pair.kind) ||
+				(doc.mode === 'dc' && pair.kind === 'inductor');
 			if (!isZeroImpedance) continue;
 			const r0 = uf.find(pair.pin0);
 			const r1 = uf.find(pair.pin1);

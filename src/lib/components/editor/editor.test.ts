@@ -1222,4 +1222,160 @@ describe('editor Svelte components SSR rendering', () => {
 		circuit.setTheveninComponent(vm.id);
 		expect(circuit.theveninTarget).toBeUndefined();
 	});
+
+	it('formats dependent source display values as textbook formulas and shows Set control when unconfigured', () => {
+		const r1: CircuitComponent = {
+			id: 'R1',
+			kind: 'resistor',
+			label: 'R1',
+			x: 8,
+			y: 4,
+			rotation: 0,
+			value: '4k'
+		};
+
+		const vcvsVar: CircuitComponent = {
+			id: 'E1',
+			kind: 'vcvs',
+			label: 'E1',
+			x: 16,
+			y: 8,
+			rotation: 90,
+			value: '2',
+			unit: 'V/V',
+			controlRef: { controlComponentId: 'R1', controlPolarity: 1, controlVarName: 'v_x' }
+		};
+		expect(formatComponentDisplayValue(vcvsVar, 'dc', 'auto', [r1, vcvsVar])).toBe('2·vₓ');
+
+		const vcvsNegComp: CircuitComponent = {
+			...vcvsVar,
+			controlRef: { controlComponentId: 'R1', controlPolarity: -1 }
+		};
+		expect(formatComponentDisplayValue(vcvsNegComp, 'dc', 'auto', [r1, vcvsNegComp])).toBe(
+			'−2·v(R1)'
+		);
+
+		const vccsNodes: CircuitComponent = {
+			id: 'G1',
+			kind: 'vccs',
+			label: 'G1',
+			x: 16,
+			y: 8,
+			rotation: 90,
+			value: '1m',
+			unit: 'S',
+			controlRef: { controlNodePos: 'N1', controlNodeNeg: '0', controlPolarity: 1 }
+		};
+		expect(formatComponentDisplayValue(vccsNodes, 'dc', 'auto', [r1, vccsNodes])).toBe(
+			'1m·v(N1,0)'
+		);
+
+		const ccvsBranch: CircuitComponent = {
+			id: 'H1',
+			kind: 'ccvs',
+			label: 'H1',
+			x: 16,
+			y: 8,
+			rotation: 90,
+			value: '1k',
+			unit: 'Ω',
+			controlRef: { controlBranchComponentId: 'R1', controlPolarity: 1 }
+		};
+		expect(formatComponentDisplayValue(ccvsBranch, 'dc', 'auto', [r1, ccvsBranch])).toBe(
+			'1k·i(R1)'
+		);
+
+		const cccsVar: CircuitComponent = {
+			id: 'F1',
+			kind: 'cccs',
+			label: 'F1',
+			x: 16,
+			y: 8,
+			rotation: 90,
+			value: '2',
+			unit: 'A/A',
+			controlRef: { controlBranchComponentId: 'R1', controlPolarity: 1, controlVarName: 'i_x' }
+		};
+		expect(formatComponentDisplayValue(cccsVar, 'dc', 'auto', [r1, cccsVar])).toBe('2·iₓ');
+
+		const unsetVcvs: CircuitComponent = {
+			id: 'E2',
+			kind: 'vcvs',
+			label: 'E2',
+			x: 16,
+			y: 8,
+			rotation: 90,
+			value: '2',
+			unit: 'V/V',
+			controlRef: { controlPolarity: 1, controlVarName: 'v_x' }
+		};
+		expect(formatComponentDisplayValue(unsetVcvs, 'dc', 'auto', [r1, unsetVcvs])).toBe(
+			'Set control'
+		);
+	});
+
+	it('renders dependent sources across ComponentPalette, SchematicCanvas, PropertyInspector, and FinalAnswersCard and supports undoable updateComponentControlRef', () => {
+		const paletteRail = render(ComponentPalette, { props: { variant: 'rail' } });
+		expect(paletteRail.body).toContain('Dependent Sources');
+		expect(paletteRail.body).toContain('VCVS (V → V)');
+		expect(paletteRail.body).toContain('CCCS (I → I)');
+		expect(paletteRail.body).toContain('Voltage-Controlled Voltage Source');
+
+		const paletteSheet = render(ComponentPalette, { props: { variant: 'sheet' } });
+		expect(paletteSheet.body).toContain('Dependent Sources');
+		expect(paletteSheet.body).toContain('min-h-11');
+
+		circuit.loadPreset('dc-dependent-vcvs');
+		expect(circuit.solution.mna.valid).toBe(true);
+
+		circuit.selectComponent('E1');
+
+		const canvasOut = render(SchematicCanvas);
+		expect(canvasOut.body).toContain('data-symbol-kind="vcvs"');
+		expect(canvasOut.body).toContain('2·vₓ');
+		expect(canvasOut.body).toContain('data-control-highlight="R1"');
+
+		const inspectorOut = render(PropertyInspector);
+		expect(inspectorOut.body).toContain('Voltage-Controlled Voltage Source (VCVS)');
+		expect(inspectorOut.body).toContain('Control Reference');
+		expect(inspectorOut.body).toContain('Across Component');
+		expect(inspectorOut.body).toContain('Between Nodes');
+		expect(inspectorOut.body).toContain('Control Polarity');
+		expect(inspectorOut.body).toContain('Live Readout');
+		expect(inspectorOut.body).toContain('Flip Polarity');
+		expect(inspectorOut.body).not.toContain('id="comp-unknown-toggle"');
+
+		const resultsOut = render(FinalAnswersCard, {
+			props: {
+				solution: circuit.solution,
+				document: circuit.document,
+				selectedComponentId: 'E1'
+			}
+		});
+		expect(resultsOut.body).toContain('E1');
+		expect(resultsOut.body).toContain('12 V');
+
+		// Switch E1 from component control to node control and verify mutual exclusivity + undo
+		circuit.updateComponentControlRef('E1', { controlNodePos: 'N1', controlNodeNeg: 'N2' });
+		expect(circuit.selectedComponent?.controlRef?.controlComponentId).toBeUndefined();
+		expect(circuit.selectedComponent?.controlRef?.controlNodePos).toBe('N1');
+		expect(circuit.selectedComponent?.controlRef?.controlNodeNeg).toBe('N2');
+
+		const nodeHighlightCanvas = render(SchematicCanvas);
+		expect(nodeHighlightCanvas.body).toContain('data-control-nodes-highlight="true"');
+		const nodeOverlayIdx = nodeHighlightCanvas.body.indexOf('N2: 10 V');
+		const controlHighlightIdx = nodeHighlightCanvas.body.indexOf(
+			'data-control-nodes-highlight="true"'
+		);
+		expect(nodeOverlayIdx).toBeGreaterThan(-1);
+		expect(controlHighlightIdx).toBeGreaterThan(nodeOverlayIdx);
+
+		expect(circuit.undo()).toBe(true);
+		expect(circuit.selectedComponent?.controlRef?.controlComponentId).toBe('R1');
+		expect(circuit.selectedComponent?.controlRef?.controlNodePos).toBeUndefined();
+
+		// Adding a fresh dependent source initializes default controlRef
+		const addedCccs = circuit.addComponent('cccs', 14, 14);
+		expect(addedCccs.controlRef).toEqual({ controlPolarity: 1, controlVarName: 'i_x' });
+	});
 });

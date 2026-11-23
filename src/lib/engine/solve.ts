@@ -31,6 +31,15 @@ export interface SolveCircuitOptions extends SolveMnaOptions {
 	methods?: MethodId[];
 }
 
+const METHOD_TITLES: Record<MethodId, string> = {
+	kcl_kvl: "Kirchhoff's Laws (KCL & KVL)",
+	nodal: 'Nodal Analysis',
+	mesh: 'Mesh Analysis',
+	superposition: 'Superposition Theorem',
+	source_transform: 'Source Transformation',
+	thevenin_norton: 'Thévenin & Norton Equivalent'
+};
+
 const ALL_METHODS: MethodId[] = [
 	'kcl_kvl',
 	'nodal',
@@ -112,6 +121,19 @@ export function solveCircuit(
 	let theveninNorton: TheveninNortonResult | undefined;
 
 	for (const methodId of requested) {
+		// Mixed source frequencies: every single-phasor method would be "verified" against a
+		// meaningless mixed-frequency MNA answer. Only Superposition handles this correctly.
+		if (mna.multiFrequencyHz && methodId !== 'superposition') {
+			methods[methodId] = {
+				methodId,
+				title: METHOD_TITLES[methodId],
+				applicable: false,
+				inapplicableReason:
+					'Sources run at different frequencies, so one phasor per node is not meaningful. Use Superposition: it solves each frequency separately and combines them in the time domain.',
+				steps: []
+			};
+			continue;
+		}
 		switch (methodId) {
 			case 'kcl_kvl':
 				methods.kcl_kvl = solveKclKvl(electricalDoc, mna);

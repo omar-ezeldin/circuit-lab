@@ -5,7 +5,9 @@ import {
 	formatRational,
 	getFixedUnitPrefix,
 	getPinPositions,
+	isDependentSourceKind,
 	isImpedanceSpecified,
+	isVoltageControlledSource,
 	parseComplexValue,
 	parseDirectImpedance,
 	parseEngineeringNumber,
@@ -754,14 +756,127 @@ export function formatImpedanceDisplay(
 	return `${reStr}${op}j${imStr} ${prefixSymbol}Ω`;
 }
 
+const UNICODE_SUBSCRIPTS: Record<string, string> = {
+	'0': '₀',
+	'1': '₁',
+	'2': '₂',
+	'3': '₃',
+	'4': '₄',
+	'5': '₅',
+	'6': '₆',
+	'7': '₇',
+	'8': '₈',
+	'9': '₉',
+	a: 'ₐ',
+	e: 'ₑ',
+	h: 'ₕ',
+	i: 'ᵢ',
+	j: 'ⱼ',
+	k: 'ₖ',
+	l: 'ₗ',
+	m: 'ₘ',
+	n: 'ₙ',
+	o: 'ₒ',
+	p: 'ₚ',
+	r: 'ᵣ',
+	s: 'ₛ',
+	t: 'ₜ',
+	u: 'ᵤ',
+	v: 'ᵥ',
+	x: 'ₓ'
+};
+
+export function formatControlVarDisplay(rawName: string): string {
+	const trimmed = rawName.trim();
+	const match = /^([A-Za-z]+)_([A-Za-z0-9]+)$/.exec(trimmed);
+	if (!match) return trimmed;
+	const [, base, sub] = match;
+	let converted = '';
+	for (const ch of sub) {
+		const mapped = UNICODE_SUBSCRIPTS[ch.toLowerCase()];
+		if (!mapped) return trimmed;
+		converted += mapped;
+	}
+	return `${base}${converted}`;
+}
+
+function formatDependentSourceDisplayValue(
+	comp: CircuitComponent,
+	allComponents?: readonly CircuitComponent[]
+): string {
+	const ref = comp.controlRef;
+	const isVoltageCtrl = isVoltageControlledSource(comp.kind);
+
+	if (isVoltageCtrl) {
+		const hasCompRef = Boolean(
+			ref?.controlComponentId &&
+				(!allComponents || allComponents.some((c) => c.id === ref.controlComponentId))
+		);
+		const hasNodeRef = Boolean(
+			ref?.controlNodePos !== undefined &&
+				ref.controlNodePos !== '' &&
+				ref?.controlNodeNeg !== undefined &&
+				ref.controlNodeNeg !== ''
+		);
+		if (!hasCompRef && !hasNodeRef) {
+			return 'Set control';
+		}
+	} else {
+		const hasBranchRef = Boolean(
+			ref?.controlBranchComponentId &&
+				(!allComponents || allComponents.some((c) => c.id === ref.controlBranchComponentId))
+		);
+		if (!hasBranchRef) {
+			return 'Set control';
+		}
+	}
+
+	const pol = ref?.controlPolarity === -1 ? -1 : 1;
+	const rawGain = comp.value.trim();
+	const parsedGain = parseEngineeringNumber(rawGain);
+	let gainStr: string;
+	if (parsedGain !== null && Number.isFinite(parsedGain)) {
+		const effectiveGain = parsedGain * pol;
+		const isNeg = effectiveGain < 0;
+		const magStr = formatEngineering(Math.abs(effectiveGain), '', 3).replace(/\s+/g, '');
+		gainStr = isNeg ? `−${magStr}` : magStr;
+	} else {
+		gainStr =
+			pol === -1 && rawGain && !rawGain.startsWith('-') && !rawGain.startsWith('−')
+				? `−${rawGain}`
+				: rawGain || '1';
+	}
+
+	let ctrlExpr: string;
+	if (ref?.controlVarName?.trim()) {
+		ctrlExpr = formatControlVarDisplay(ref.controlVarName.trim());
+	} else if (isVoltageCtrl) {
+		if (ref?.controlComponentId) {
+			const target = allComponents?.find((c) => c.id === ref.controlComponentId);
+			ctrlExpr = `v(${target?.label ?? ref.controlComponentId})`;
+		} else {
+			ctrlExpr = `v(${ref?.controlNodePos ?? '?'},${ref?.controlNodeNeg ?? '?'})`;
+		}
+	} else {
+		const target = allComponents?.find((c) => c.id === ref?.controlBranchComponentId);
+		ctrlExpr = `i(${target?.label ?? ref?.controlBranchComponentId ?? '?'})`;
+	}
+
+	return `${gainStr}·${ctrlExpr}`;
+}
+
 export function formatComponentDisplayValue(
 	comp: CircuitComponent,
 	mode: AnalysisMode,
-	unitSystem: UnitSystemId = 'auto'
+	unitSystem: UnitSystemId = 'auto',
+	allComponents?: readonly CircuitComponent[]
 ): string {
 	if (comp.kind === 'ground') return '';
 	if (comp.kind === 'terminal') return '';
 	if (comp.kind === 'voltmeter') return '';
+	if (isDependentSourceKind(comp.kind)) {
+		return formatDependentSourceDisplayValue(comp, allComponents);
+	}
 
 	const unitMap: Record<string, string> = {
 		resistor: 'Ω',

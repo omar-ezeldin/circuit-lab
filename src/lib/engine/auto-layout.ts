@@ -84,6 +84,10 @@ const KIND_PREFIX: Record<ComponentKind, string> = {
 	inductor: 'L',
 	voltage_source: 'V',
 	current_source: 'I',
+	vcvs: 'E',
+	vccs: 'G',
+	ccvs: 'H',
+	cccs: 'F',
 	ground: 'GND',
 	terminal: 'T',
 	voltmeter: 'VM'

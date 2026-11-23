@@ -7,6 +7,7 @@ import {
 	encodeCircuitToHashUncompressed,
 	type ShareableCircuitPayload
 } from '../share';
+import { exportCircuitJson, parseCircuitImport } from '../io';
 import { solveCircuit } from '../solve';
 import type { CircuitDocument, TheveninTarget, UnitSystemId } from '../types';
 
@@ -539,5 +540,97 @@ describe('Shareable Circuit URL Codec (share.ts)', () => {
 		expect(decodedSol.mna.valid).toBe(true);
 		expect(decodedSol.mna.branches['VM1'].voltage.re).toBeCloseTo(4, 9);
 		expect(decodedSol.allVerified).toBe(true);
+	});
+
+	it('round-trips a dependent source (VCVS) circuit with full controlRef through #c=v1.', async () => {
+		const depDoc: CircuitDocument = {
+			schemaVersion: 1,
+			name: 'Shareable VCVS',
+			mode: 'dc',
+			frequencyHz: 60,
+			unitSystem: 'kohm-v-ma',
+			components: [
+				{ id: 'V1', kind: 'voltage_source', label: 'V1', x: 4, y: 8, rotation: 90, value: '16' },
+				{ id: 'R1', kind: 'resistor', label: 'R1', x: 8, y: 4, rotation: 0, value: '4k' },
+				{ id: 'R2', kind: 'resistor', label: 'R2', x: 12, y: 8, rotation: 90, value: '4k' },
+				{ id: 'R3', kind: 'resistor', label: 'R3', x: 16, y: 4, rotation: 0, value: '2k' },
+				{
+					id: 'E1',
+					kind: 'vcvs',
+					label: 'E1',
+					x: 20,
+					y: 8,
+					rotation: 90,
+					value: '2',
+					unit: 'V/V',
+					controlRef: {
+						controlComponentId: 'R1',
+						controlPolarity: 1,
+						controlVarName: 'v_x',
+						gain: '2'
+					}
+				},
+				{ id: 'G1', kind: 'ground', label: 'G1', x: 4, y: 10, rotation: 0, value: '0' }
+			],
+			wires: [
+				{ id: 'w1', points: [{ x: 4, y: 6 }, { x: 4, y: 4 }, { x: 6, y: 4 }] },
+				{ id: 'w2', points: [{ x: 10, y: 4 }, { x: 14, y: 4 }] },
+				{ id: 'w3', points: [{ x: 12, y: 4 }, { x: 12, y: 6 }] },
+				{ id: 'w4', points: [{ x: 18, y: 4 }, { x: 20, y: 4 }, { x: 20, y: 6 }] },
+				{ id: 'w5', points: [{ x: 4, y: 10 }, { x: 20, y: 10 }] }
+			]
+		};
+
+		const hash = await encodeCircuitToHash({ document: depDoc, unitSystem: 'kohm-v-ma' });
+		expect(hash).toMatch(/^#c=v1\.[A-Za-z0-9_-]+$/);
+
+		const decoded = await decodeCircuitFromHash(hash);
+		expect(decoded).not.toBeNull();
+		if (!decoded) return;
+
+		const e1 = decoded.document.components.find((c) => c.id === 'E1');
+		expect(e1?.kind).toBe('vcvs');
+		expect(e1?.controlRef).toEqual({
+			controlComponentId: 'R1',
+			controlPolarity: 1,
+			controlVarName: 'v_x',
+			gain: '2'
+		});
+
+		const decodedSol = solveCircuit(decoded.document);
+		expect(decodedSol.mna.valid).toBe(true);
+		expect(decodedSol.mna.powerBalance.balanced).toBe(true);
+		expect(decodedSol.mna.branches['R2'].voltage.re).toBeCloseTo(10, 9);
+		expect(decodedSol.mna.branches['E1'].voltage.re).toBeCloseTo(12, 9);
+		expect(decodedSol.allVerified).toBe(true);
+	});
+
+	it('keeps per-source frequencies through share links and JSON export/import', async () => {
+		// Two sources at different frequencies (multi-frequency superposition)
+		const doc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'ac',
+			frequencyHz: 60,
+			components: [
+				{ id: 'V1', kind: 'voltage_source', label: 'V1', x: 0, y: 2, rotation: 90, value: '10∠0°', frequencyHz: 60 },
+				{ id: 'R1', kind: 'resistor', label: 'R1', x: 2, y: 0, rotation: 0, value: '10' },
+				{ id: 'R2', kind: 'resistor', label: 'R2', x: 4, y: 2, rotation: 90, value: '10' },
+				{ id: 'V2', kind: 'voltage_source', label: 'V2', x: 8, y: 2, rotation: 90, value: '6∠90°', frequencyHz: 120 },
+				{ id: 'R3', kind: 'resistor', label: 'R3', x: 6, y: 0, rotation: 0, value: '10' },
+				{ id: 'G1', kind: 'ground', label: 'G1', x: 0, y: 4, rotation: 0, value: '0' }
+			],
+			wires: [{ id: 'w_gnd', points: [{ x: 0, y: 4 }, { x: 8, y: 4 }] }]
+		};
+		const freqs = (d: CircuitDocument) =>
+			Object.fromEntries(d.components.filter((c) => c.kind === 'voltage_source').map((c) => [c.id, c.frequencyHz]));
+
+		const decoded = await decodeCircuitFromHash(await encodeCircuitToHash({ document: doc }));
+		expect(decoded).not.toBeNull();
+		expect(freqs(decoded!.document)).toEqual({ V1: 60, V2: 120 });
+		expect(solveCircuit(decoded!.document).mna.multiFrequencyHz).toEqual([60, 120]);
+
+		const reimported = parseCircuitImport(exportCircuitJson(doc));
+		if (!reimported.ok) throw new Error(reimported.errors.join('; '));
+		expect(freqs(reimported.document)).toEqual({ V1: 60, V2: 120 });
 	});
 });

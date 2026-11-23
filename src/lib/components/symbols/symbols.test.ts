@@ -55,7 +55,15 @@ describe('settings store', () => {
 
 describe('getComponentPinGridOffsets', () => {
 	const twoTerminalPassives: SymbolKind[] = ['resistor', 'capacitor', 'inductor'];
-	const twoTerminalSources: SymbolKind[] = ['voltage_source', 'current_source', 'voltmeter'];
+	const twoTerminalSources: SymbolKind[] = [
+		'voltage_source',
+		'current_source',
+		'vcvs',
+		'vccs',
+		'ccvs',
+		'cccs',
+		'voltmeter'
+	];
 	const oneTerminalKinds: SymbolKind[] = ['ground', 'terminal', 'probe'];
 
 	it('rotates 2-terminal passive components accurately across 0, 90, 180, 270 degrees', () => {
@@ -160,6 +168,10 @@ describe('CircuitSymbol rendering & IEEE/IEC switching', () => {
 			'inductor',
 			'voltage_source',
 			'current_source',
+			'vcvs',
+			'vccs',
+			'ccvs',
+			'cccs',
 			'ground',
 			'terminal',
 			'voltmeter',
@@ -181,10 +193,35 @@ describe('CircuitSymbol rendering & IEEE/IEC switching', () => {
 		}
 	});
 
-	it('exports PALETTE_ITEMS with shortcuts, units, and default values', () => {
-		expect(PALETTE_ITEMS.length).toBeGreaterThanOrEqual(9);
-		const shortcuts = new Set(PALETTE_ITEMS.map((item) => item.shortcut));
-		expect(shortcuts.size).toBe(PALETTE_ITEMS.length);
+	it('renders textbook diamond symbols for all 4 dependent sources in icon and schematic variants', () => {
+		for (const kind of ['vcvs', 'ccvs'] as const) {
+			const icon = render(CircuitSymbol, { props: { kind, variant: 'icon' } });
+			expect(icon.body).toContain('M 12 4.5 L 19.5 12 L 12 19.5 L 4.5 12 Z');
+			expect(icon.body).toContain('M 7.5 12 L 10.5 12 M 9 10.5 L 9 13.5');
+			expect(icon.body).toContain('M 13.5 12 L 16.5 12');
+
+			const schematic = render(CircuitSymbol, { props: { kind, variant: 'schematic' } });
+			expect(schematic.body).toContain('M 0 -16 L 16 0 L 0 16 L -16 0 Z');
+			expect(schematic.body).toContain('M -10 0 L -4 0 M -7 -3 L -7 3');
+			expect(schematic.body).toContain('M 4 0 L 10 0');
+		}
+
+		for (const kind of ['vccs', 'cccs'] as const) {
+			const icon = render(CircuitSymbol, { props: { kind, variant: 'icon' } });
+			expect(icon.body).toContain('M 12 4.5 L 19.5 12 L 12 19.5 L 4.5 12 Z');
+			expect(icon.body).toContain('M 13 9.5 L 16 12 L 13 14.5');
+
+			const schematic = render(CircuitSymbol, { props: { kind, variant: 'schematic' } });
+			expect(schematic.body).toContain('M 0 -16 L 16 0 L 0 16 L -16 0 Z');
+			expect(schematic.body).toContain('M -9 0 L 9 0');
+			expect(schematic.body).toContain('M 4 -4.5 L 9 0 L 4 4.5');
+		}
+	});
+
+	it('exports PALETTE_ITEMS with shortcuts, units, dependent sources, and default values', () => {
+		expect(PALETTE_ITEMS.length).toBeGreaterThanOrEqual(15);
+		const nonEmptyShortcuts = PALETTE_ITEMS.map((item) => item.shortcut).filter(Boolean);
+		expect(new Set(nonEmptyShortcuts).size).toBe(nonEmptyShortcuts.length);
 
 		const resistorItem = PALETTE_ITEMS.find((item) => item.id === 'resistor');
 		expect(resistorItem).toMatchObject({
@@ -200,6 +237,30 @@ describe('CircuitSymbol rendering & IEEE/IEC switching', () => {
 			label: 'Voltmeter',
 			shortcut: 'M',
 			category: 'connections'
+		});
+
+		const dependentItems = PALETTE_ITEMS.filter((item) => item.category === 'dependent');
+		expect(dependentItems.map((i) => i.kind)).toEqual(['vcvs', 'vccs', 'ccvs', 'cccs']);
+		expect(dependentItems.find((i) => i.kind === 'vcvs')).toMatchObject({
+			label: 'VCVS',
+			defaultValue: 2,
+			defaultInput: '2',
+			unit: 'V/V'
+		});
+		expect(dependentItems.find((i) => i.kind === 'vccs')).toMatchObject({
+			label: 'VCCS',
+			defaultInput: '1m',
+			unit: 'S'
+		});
+		expect(dependentItems.find((i) => i.kind === 'ccvs')).toMatchObject({
+			label: 'CCVS',
+			defaultInput: '1k',
+			unit: 'Ω'
+		});
+		expect(dependentItems.find((i) => i.kind === 'cccs')).toMatchObject({
+			label: 'CCCS',
+			defaultInput: '2',
+			unit: 'A/A'
 		});
 	});
 });

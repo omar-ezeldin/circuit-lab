@@ -11,7 +11,7 @@
 		X
 	} from 'lucide-svelte';
 	import { CircuitSymbol } from '$lib/components/symbols';
-	import { formatComplexParts } from '$lib/components/results/formatters';
+	import { formatComplexParts, formatRealPower } from '$lib/components/results/formatters';
 	import { Button, Input, Label, Select, Switch } from '$lib/components/ui';
 	import {
 		areUnknownKindsCompatible,
@@ -19,11 +19,15 @@
 		formatUnknownTermExpr,
 		getDefaultUnknownSymbol,
 		getUnknownTerms,
+		isCurrentControlledSource,
+		isDependentSourceKind,
 		isImpedanceSpecified,
+		isVoltageControlledSource,
 		parseDirectImpedance,
 		parseEngineeringNumber,
 		type ComponentKind,
 		type ConstraintKind,
+		type DependentSourceKind,
 		type PassiveValueMode
 	} from '$lib/engine';
 	import { AC_ENABLED } from '$lib/env';
@@ -33,7 +37,11 @@
 	import EngineeringInput from './EngineeringInput.svelte';
 	import ImpedanceInput from './ImpedanceInput.svelte';
 	import PhasorInput from './PhasorInput.svelte';
-	import { computeWireCrossings } from './helpers';
+	import {
+		computeWireCrossings,
+		formatComponentDisplayValue,
+		formatControlVarDisplay
+	} from './helpers';
 
 	interface Props {
 		onAutoWire?: () => void;
@@ -47,9 +55,20 @@
 		inductor: 'Inductor',
 		voltage_source: 'Voltage Source',
 		current_source: 'Current Source',
+		vcvs: 'Voltage-Controlled Voltage Source (VCVS)',
+		vccs: 'Voltage-Controlled Current Source (VCCS)',
+		ccvs: 'Current-Controlled Voltage Source (CCVS)',
+		cccs: 'Current-Controlled Current Source (CCCS)',
 		ground: 'Ground (0 V)',
 		terminal: 'Port Terminal',
 		voltmeter: 'Voltmeter'
+	};
+
+	const DEPENDENT_GAIN_UNIT: Record<DependentSourceKind, string> = {
+		vcvs: 'V/V',
+		vccs: 'A/V',
+		ccvs: 'V/A',
+		cccs: 'A/A'
 	};
 
 	const UNIT_BY_KIND: Partial<Record<ComponentKind, string>> = {
@@ -57,26 +76,43 @@
 		capacitor: 'F',
 		inductor: 'H',
 		voltage_source: 'V',
-		current_source: 'A'
+		current_source: 'A',
+		vcvs: 'V/V',
+		vccs: 'S',
+		ccvs: 'Ω',
+		cccs: 'A/A'
 	};
 
 	const selectedComp = $derived(circuit.selectedComponent);
 	const selectedWire = $derived(circuit.selectedWire);
 
 	let labelDraft = $state('');
+	let labelError = $state<string | null>(null);
 	let terminalNameDraft = $state('');
 	let sourceFreqDraft = $state('');
 	let globalFreqDraft = $state(String(circuit.document.frequencyHz));
 	let unknownSymbolDraft = $state('');
 	let selectedMultiplierDraft = $state('1');
 	let linkSelectValue = $state('');
+	let controlVarDraft = $state('');
+	let voltageControlModeOverride = $state<'component' | 'nodes' | null>(null);
+	let lastSelectedCompId = $state<string | null>(null);
 
 	$effect(() => {
 		if (selectedComp) {
 			labelDraft = selectedComp.label;
+			labelError = null;
 			terminalNameDraft = selectedComp.terminalName ?? '';
 			sourceFreqDraft =
 				selectedComp.frequencyHz !== undefined ? String(selectedComp.frequencyHz) : '';
+			controlVarDraft = selectedComp.controlRef?.controlVarName ?? '';
+			if (selectedComp.id !== lastSelectedCompId) {
+				lastSelectedCompId = selectedComp.id;
+				voltageControlModeOverride = null;
+			}
+		} else {
+			lastSelectedCompId = null;
+			voltageControlModeOverride = null;
 		}
 	});
 
@@ -86,6 +122,15 @@
 
 	const isSource = $derived(
 		selectedComp?.kind === 'voltage_source' || selectedComp?.kind === 'current_source'
+	);
+	const isDependentSource = $derived(
+		selectedComp !== null && isDependentSourceKind(selectedComp.kind)
+	);
+	const isVoltageControlled = $derived(
+		selectedComp !== null && isVoltageControlledSource(selectedComp.kind)
+	);
+	const isCurrentControlled = $derived(
+		selectedComp !== null && isCurrentControlledSource(selectedComp.kind)
 	);
 	const isPassive = $derived(
 		selectedComp?.kind === 'resistor' ||
@@ -112,10 +157,204 @@
 			circuit.theveninTarget.componentId === selectedComp.id
 	);
 
+	const activeVoltageControlMode = $derived.by<'component' | 'nodes'>(() => {
+		if (voltageControlModeOverride !== null) return voltageControlModeOverride;
+		const ref = selectedComp?.controlRef;
+		if (
+			ref &&
+			!ref.controlComponentId &&
+			(ref.controlNodePos !== undefined || ref.controlNodeNeg !== undefined)
+		) {
+			return 'nodes';
+		}
+		return 'component';
+	});
+
+	const dependentControlPolarity = $derived<1 | -1>(
+		selectedComp?.controlRef?.controlPolarity === -1 ? -1 : 1
+	);
+
+	const dependentControlVarDisplay = $derived.by(() => {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return 'vₓ';
+		const raw =
+			selectedComp.controlRef?.controlVarName?.trim() ||
+			(isVoltageControlledSource(selectedComp.kind) ? 'v_x' : 'i_x');
+		return formatControlVarDisplay(raw);
+	});
+
+	const voltageControlComponentOptions = $derived.by(() => {
+		if (!selectedComp) return [];
+		return circuit.document.components
+			.filter((c) => c.id !== selectedComp.id && c.kind !== 'ground' && c.kind !== 'terminal')
+			.map((c) => {
+				const valStr = formatComponentDisplayValue(
+					c,
+					circuit.document.mode,
+					settings.unitSystem,
+					circuit.document.components
+				);
+				return {
+					value: c.id,
+					label: valStr ? `${c.label} (${valStr})` : `${c.label} (${KIND_LABELS[c.kind]})`
+				};
+			});
+	});
+
+	const currentControlComponentOptions = $derived.by(() => {
+		if (!selectedComp) return [];
+		return circuit.document.components
+			.filter(
+				(c) =>
+					c.id !== selectedComp.id &&
+					c.kind !== 'ground' &&
+					c.kind !== 'terminal' &&
+					c.kind !== 'voltmeter'
+			)
+			.map((c) => {
+				const valStr = formatComponentDisplayValue(
+					c,
+					circuit.document.mode,
+					settings.unitSystem,
+					circuit.document.components
+				);
+				return {
+					value: c.id,
+					label: valStr ? `${c.label} (${valStr})` : `${c.label} (${KIND_LABELS[c.kind]})`
+				};
+			});
+	});
+
+	const controlNodeOptions = $derived.by(() => {
+		const nodes = Object.values(circuit.graph.nodes).sort((a, b) => {
+			if (a.isReference) return -1;
+			if (b.isReference) return 1;
+			return a.nodeId.localeCompare(b.nodeId, undefined, { numeric: true });
+		});
+		return nodes.map((n) => ({
+			value: n.nodeId,
+			label: n.isReference ? '0 (GND)' : n.nodeId
+		}));
+	});
+
+	const selectedDependentReadout = $derived.by(() => {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return null;
+		const mna = circuit.solution.mna;
+		if (!mna.valid) return null;
+		const branch = mna.branches[selectedComp.id];
+		if (!branch) return null;
+
+		const ref = selectedComp.controlRef;
+		const pol = ref?.controlPolarity === -1 ? -1 : 1;
+		const isV = isVoltageControlledSource(selectedComp.kind);
+		const fmtOpts = {
+			angleDisplay: settings.angleDisplay,
+			precision: settings.precision,
+			showDcFractions: settings.showDcFractions,
+			unitSystem: settings.unitSystem
+		};
+
+		let ctrlVal: import('$lib/engine').Complex | null = null;
+		if (isV) {
+			if (ref?.controlComponentId && mna.branches[ref.controlComponentId]) {
+				ctrlVal = mna.branches[ref.controlComponentId].voltage.scale(pol);
+			} else if (
+				ref?.controlNodePos &&
+				ref?.controlNodeNeg &&
+				mna.nodeVoltages[ref.controlNodePos] &&
+				mna.nodeVoltages[ref.controlNodeNeg]
+			) {
+				ctrlVal = mna.nodeVoltages[ref.controlNodePos].voltage
+					.sub(mna.nodeVoltages[ref.controlNodeNeg].voltage)
+					.scale(pol);
+			}
+		} else if (ref?.controlBranchComponentId && mna.branches[ref.controlBranchComponentId]) {
+			ctrlVal = mna.branches[ref.controlBranchComponentId].current.scale(pol);
+		}
+
+		const ctrlParts = ctrlVal
+			? formatComplexParts(ctrlVal, isV ? 'V' : 'A', mna.mode, fmtOpts)
+			: null;
+		const vParts = formatComplexParts(branch.voltage, 'V', mna.mode, fmtOpts);
+		const iParts = formatComplexParts(branch.current, 'A', mna.mode, fmtOpts);
+		const powerStr = formatRealPower(branch.realPower, fmtOpts);
+		const isSupplied = branch.realPower < -1e-12;
+		const isZeroPower = Math.abs(branch.realPower) < 1e-12;
+
+		return {
+			ctrlLabel: dependentControlVarDisplay,
+			isVoltageCtrl: isV,
+			ctrlParts,
+			vParts,
+			iParts,
+			powerStr,
+			powerTag: isZeroPower ? '0' : isSupplied ? 'Supplied' : 'Absorbed',
+			isSupplied
+		};
+	});
+
+	function handleVoltageControlModeSwitch(mode: 'component' | 'nodes') {
+		voltageControlModeOverride = mode;
+	}
+
+	function handleControlComponentChange(nextCompId: string) {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return;
+		voltageControlModeOverride = 'component';
+		circuit.updateComponentControlRef(selectedComp.id, {
+			controlComponentId: nextCompId || undefined
+		});
+	}
+
+	function handleControlNodePosChange(nextNodePos: string) {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return;
+		voltageControlModeOverride = 'nodes';
+		const currentNeg =
+			selectedComp.controlRef?.controlNodeNeg ??
+			(circuit.graph.nodes['0'] ? '0' : controlNodeOptions[0]?.value);
+		circuit.updateComponentControlRef(selectedComp.id, {
+			controlNodePos: nextNodePos || undefined,
+			...(nextNodePos && !selectedComp.controlRef?.controlNodeNeg && currentNeg
+				? { controlNodeNeg: currentNeg }
+				: {})
+		});
+	}
+
+	function handleControlNodeNegChange(nextNodeNeg: string) {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return;
+		voltageControlModeOverride = 'nodes';
+		circuit.updateComponentControlRef(selectedComp.id, {
+			controlNodeNeg: nextNodeNeg || undefined
+		});
+	}
+
+	function handleControlBranchChange(nextBranchId: string) {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return;
+		circuit.updateComponentControlRef(selectedComp.id, {
+			controlBranchComponentId: nextBranchId || undefined
+		});
+	}
+
+	function handleControlPolarityChange(polarity: 1 | -1) {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return;
+		if (dependentControlPolarity === polarity) return;
+		circuit.updateComponentControlRef(selectedComp.id, { controlPolarity: polarity });
+	}
+
+	function commitControlVarName() {
+		if (!selectedComp || !isDependentSourceKind(selectedComp.kind)) return;
+		const trimmed = String(controlVarDraft ?? '').trim();
+		controlVarDraft = trimmed;
+		const current = selectedComp.controlRef?.controlVarName ?? '';
+		if (trimmed !== current) {
+			circuit.updateComponentControlRef(selectedComp.id, {
+				controlVarName: trimmed || undefined
+			});
+		}
+	}
+
 	const selectedVoltmeterReading = $derived.by(() => {
 		if (!selectedComp || selectedComp.kind !== 'voltmeter') return null;
 		const [nodeA, nodeB] = circuit.graph.componentNodes[selectedComp.id] ?? [];
-		const branch = circuit.solution.mna.valid
+		const branch = circuit.solution.mna.valid && !circuit.solution.mna.multiFrequencyHz
 			? circuit.solution.mna.branches[selectedComp.id]
 			: undefined;
 		if (!branch) {
@@ -449,8 +688,13 @@
 			return;
 		}
 		if (trimmed !== selectedComp.label) {
-			circuit.updateComponent(selectedComp.id, { label: trimmed });
+			if (!circuit.updateComponent(selectedComp.id, { label: trimmed })) {
+				labelError = `“${trimmed}” is already used by another component.`;
+				labelDraft = selectedComp.label;
+				return;
+			}
 		}
+		labelError = null;
 	}
 
 	function commitTerminalName() {
@@ -619,7 +863,12 @@
 					onkeydown={(e) => {
 						if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
 					}}
+					aria-invalid={labelError ? true : undefined}
+					aria-describedby={labelError ? 'comp-label-error' : undefined}
 				/>
+				{#if labelError}
+					<p id="comp-label-error" class="text-xs text-destructive" role="alert">{labelError}</p>
+				{/if}
 			</div>
 
 			{#if selectedComp.kind === 'terminal'}
@@ -672,6 +921,228 @@
 						</p>
 					{/if}
 				</div>
+			{:else if isDependentSource && isDependentSourceKind(selectedComp.kind)}
+				<!-- Dependent Source Gain -->
+				<div class="flex flex-col gap-1.5">
+					<Label for="comp-gain">
+						{#if selectedComp.kind === 'vcvs'}
+							Gain A<sub>v</sub> (V/V)
+						{:else if selectedComp.kind === 'vccs'}
+							Gain g<sub>m</sub> (A/V)
+						{:else if selectedComp.kind === 'ccvs'}
+							Gain r<sub>m</sub> (V/A)
+						{:else}
+							Gain β (A/A)
+						{/if}
+					</Label>
+					<EngineeringInput
+						id="comp-gain"
+						value={selectedComp.value}
+						unit={DEPENDENT_GAIN_UNIT[selectedComp.kind]}
+						allowComplex={false}
+						positiveOnly={false}
+						allowZero={true}
+						class="min-h-11 pr-12 text-base lg:min-h-8 lg:pr-11 lg:text-sm"
+						onCommit={(val) => circuit.updateComponent(selectedComp.id, { value: val })}
+					/>
+				</div>
+
+				<!-- Control Reference Section -->
+				<div class="flex flex-col gap-2.5 border-t border-border pt-3">
+					<span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+						Control Reference
+					</span>
+
+					{#if isVoltageControlled}
+						<div
+							role="radiogroup"
+							aria-label="Voltage control reference mode"
+							class="grid h-auto min-h-11 grid-cols-2 gap-0.5 rounded-[4px] border border-border bg-surface-rail p-0.5 lg:h-8 lg:min-h-0"
+						>
+							<button
+								type="button"
+								role="radio"
+								aria-checked={activeVoltageControlMode === 'component'}
+								onclick={() => handleVoltageControlModeSwitch('component')}
+								class={`min-h-11 cursor-pointer rounded-[3px] border px-2 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-full lg:min-h-0 lg:text-[11px] ${
+									activeVoltageControlMode === 'component'
+										? 'border-border bg-card text-foreground'
+										: 'border-transparent text-muted-foreground hover:text-foreground'
+								}`}
+							>
+								Across Component
+							</button>
+							<button
+								type="button"
+								role="radio"
+								aria-checked={activeVoltageControlMode === 'nodes'}
+								onclick={() => handleVoltageControlModeSwitch('nodes')}
+								class={`min-h-11 cursor-pointer rounded-[3px] border px-2 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-full lg:min-h-0 lg:text-[11px] ${
+									activeVoltageControlMode === 'nodes'
+										? 'border-border bg-card text-foreground'
+										: 'border-transparent text-muted-foreground hover:text-foreground'
+								}`}
+							>
+								Between Nodes
+							</button>
+						</div>
+
+						{#if activeVoltageControlMode === 'component'}
+							<div class="flex flex-col gap-1.5">
+								<Label for="dep-ctrl-component">Sense Voltage Across</Label>
+								<Select
+									id="dep-ctrl-component"
+									value={selectedComp.controlRef?.controlComponentId ?? ''}
+									options={[
+										{ value: '', label: 'Select controlling component…' },
+										...voltageControlComponentOptions
+									]}
+									onchange={(e) =>
+										handleControlComponentChange((e.currentTarget as HTMLSelectElement).value)}
+								/>
+							</div>
+						{:else}
+							<div class="grid grid-cols-2 gap-2">
+								<div class="flex flex-col gap-1.5">
+									<Label for="dep-ctrl-node-pos">+ Node</Label>
+									<Select
+										id="dep-ctrl-node-pos"
+										value={selectedComp.controlRef?.controlNodePos ?? ''}
+										options={[{ value: '', label: 'Select…' }, ...controlNodeOptions]}
+										onchange={(e) =>
+											handleControlNodePosChange((e.currentTarget as HTMLSelectElement).value)}
+									/>
+								</div>
+								<div class="flex flex-col gap-1.5">
+									<Label for="dep-ctrl-node-neg">− Node</Label>
+									<Select
+										id="dep-ctrl-node-neg"
+										value={selectedComp.controlRef?.controlNodeNeg ?? ''}
+										options={[{ value: '', label: 'Select…' }, ...controlNodeOptions]}
+										onchange={(e) =>
+											handleControlNodeNegChange((e.currentTarget as HTMLSelectElement).value)}
+									/>
+								</div>
+							</div>
+						{/if}
+					{:else if isCurrentControlled}
+						<div class="flex flex-col gap-1.5">
+							<Label for="dep-ctrl-branch">Sense Current Through</Label>
+							<Select
+								id="dep-ctrl-branch"
+								value={selectedComp.controlRef?.controlBranchComponentId ?? ''}
+								options={[
+									{ value: '', label: 'Select controlling branch…' },
+									...currentControlComponentOptions
+								]}
+								onchange={(e) =>
+									handleControlBranchChange((e.currentTarget as HTMLSelectElement).value)}
+							/>
+						</div>
+					{/if}
+
+					<!-- Control Polarity & Variable Label -->
+					<div class="grid grid-cols-1 gap-2.5 min-[360px]:grid-cols-2">
+						<div class="flex flex-col gap-1.5">
+							<span class="text-[11px] font-medium text-muted-foreground">Control Polarity</span>
+							<div
+								role="radiogroup"
+								aria-label="Control polarity"
+								class="grid h-auto min-h-11 grid-cols-2 gap-0.5 rounded-[4px] border border-border bg-surface-rail p-0.5 lg:h-8 lg:min-h-0"
+							>
+								<button
+									type="button"
+									role="radio"
+									aria-checked={dependentControlPolarity === 1}
+									onclick={() => handleControlPolarityChange(1)}
+									class={`font-engineering min-h-11 cursor-pointer rounded-[3px] border px-2 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-full lg:min-h-0 lg:text-[11px] ${
+										dependentControlPolarity === 1
+											? 'border-border bg-card text-foreground'
+											: 'border-transparent text-muted-foreground hover:text-foreground'
+									}`}
+								>
+									+{dependentControlVarDisplay}
+								</button>
+								<button
+									type="button"
+									role="radio"
+									aria-checked={dependentControlPolarity === -1}
+									onclick={() => handleControlPolarityChange(-1)}
+									class={`font-engineering min-h-11 cursor-pointer rounded-[3px] border px-2 text-xs font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:h-full lg:min-h-0 lg:text-[11px] ${
+										dependentControlPolarity === -1
+											? 'border-border bg-card text-foreground'
+											: 'border-transparent text-muted-foreground hover:text-foreground'
+									}`}
+								>
+									−{dependentControlVarDisplay}
+								</button>
+							</div>
+						</div>
+
+						<div class="flex flex-col gap-1.5">
+							<Label for="dep-control-var">Variable Label</Label>
+							<Input
+								id="dep-control-var"
+								tabular
+								placeholder={isVoltageControlled ? 'v_x' : 'i_x'}
+								class="min-h-11 text-base lg:min-h-0 lg:text-xs"
+								bind:value={controlVarDraft}
+								onblur={commitControlVarName}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+								}}
+							/>
+						</div>
+					</div>
+				</div>
+
+				<!-- Live Solved Readout -->
+				{#if selectedDependentReadout}
+					<div
+						class="flex flex-col gap-1.5 rounded-[4px] border border-border bg-surface-rail/50 px-3 py-2.5"
+					>
+						<span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+							Live Readout
+						</span>
+						{#if selectedDependentReadout.ctrlParts}
+							<div class="flex items-baseline justify-between gap-2 text-xs">
+								<span class="font-engineering text-muted-foreground">
+									{selectedDependentReadout.ctrlLabel}
+								</span>
+								<span
+									class={`font-engineering font-semibold ${
+										selectedDependentReadout.isVoltageCtrl
+											? 'text-voltage'
+											: 'text-branch-current'
+									}`}
+								>
+									{selectedDependentReadout.ctrlParts.primary}
+								</span>
+							</div>
+						{/if}
+						<div class="flex items-baseline justify-between gap-2 text-xs">
+							<span class="text-muted-foreground">Voltage (V)</span>
+							<span class="font-engineering font-semibold text-voltage">
+								{selectedDependentReadout.vParts.primary}
+							</span>
+						</div>
+						<div class="flex items-baseline justify-between gap-2 text-xs">
+							<span class="text-muted-foreground">Current (I)</span>
+							<span class="font-engineering font-semibold text-branch-current">
+								{selectedDependentReadout.iParts.primary}
+							</span>
+						</div>
+						<div class="flex items-baseline justify-between gap-2 text-xs">
+							<span class="text-muted-foreground">Power (P)</span>
+							<span class="font-engineering font-medium text-foreground">
+								{selectedDependentReadout.powerStr}
+								<span class="font-sans text-[10px] text-muted-foreground">
+									· {selectedDependentReadout.powerTag}
+								</span>
+							</span>
+						</div>
+					</div>
+				{/if}
 			{:else if selectedComp.kind !== 'ground'}
 				{#if isReactive && isAcMode}
 					<div class="flex flex-col gap-1.5">
@@ -783,7 +1254,7 @@
 		</div>
 
 		<!-- Solve for Unknown (?) Section -->
-		{#if isTwoTerminal}
+		{#if isTwoTerminal && !isDependentSource}
 			<div class="flex flex-col gap-3 px-4 py-3.5">
 				<div class="flex min-h-11 items-center justify-between gap-2 py-0.5 lg:min-h-0 lg:py-0">
 					<div class="flex flex-col gap-0.5">
@@ -1022,7 +1493,7 @@
 				</Button>
 			</div>
 
-			{#if isVoltmeter}
+			{#if isVoltmeter || isDependentSource}
 				<Button
 					variant="outline"
 					size="sm"
@@ -1034,7 +1505,7 @@
 				</Button>
 			{/if}
 
-			{#if isTwoTerminal}
+			{#if isPassive}
 				<Button
 					variant={isTheveninTarget ? 'default' : 'secondary'}
 					size="sm"

@@ -83,6 +83,18 @@
 			<path d="M 19.5 12 L 22 12" />
 			<path d="M 7.5 12 L 16.5 12" />
 			<path d="M 13.5 9 L 16.5 12 L 13.5 15" />
+		{:else if kind === 'vcvs' || kind === 'ccvs'}
+			<path d="M 2 12 L 4.5 12" />
+			<path d="M 12 4.5 L 19.5 12 L 12 19.5 L 4.5 12 Z" />
+			<path d="M 19.5 12 L 22 12" />
+			<path d="M 7.5 12 L 10.5 12 M 9 10.5 L 9 13.5" />
+			<path d="M 13.5 12 L 16.5 12" />
+		{:else if kind === 'vccs' || kind === 'cccs'}
+			<path d="M 2 12 L 4.5 12" />
+			<path d="M 12 4.5 L 19.5 12 L 12 19.5 L 4.5 12 Z" />
+			<path d="M 19.5 12 L 22 12" />
+			<path d="M 8 12 L 16 12" />
+			<path d="M 13 9.5 L 16 12 L 13 14.5" />
 		{:else if kind === 'ground'}
 			<path d="M 12 4 L 12 11" />
 			<path d="M 5.5 11 L 18.5 11" />
@@ -156,6 +168,18 @@
 			<path d="M -40 0 L -15 0" />
 			<circle cx="0" cy="0" r="15" />
 			<path d="M 15 0 L 40 0" />
+			<path d="M -9 0 L 9 0" />
+			<path d="M 4 -4.5 L 9 0 L 4 4.5" />
+		{:else if kind === 'vcvs' || kind === 'ccvs'}
+			<path d="M -40 0 L -16 0" />
+			<path d="M 0 -16 L 16 0 L 0 16 L -16 0 Z" />
+			<path d="M 16 0 L 40 0" />
+			<path d="M -10 0 L -4 0 M -7 -3 L -7 3" />
+			<path d="M 4 0 L 10 0" />
+		{:else if kind === 'vccs' || kind === 'cccs'}
+			<path d="M -40 0 L -16 0" />
+			<path d="M 0 -16 L 16 0 L 0 16 L -16 0 Z" />
+			<path d="M 16 0 L 40 0" />
 			<path d="M -9 0 L 9 0" />
 			<path d="M 4 -4.5 L 9 0 L 4 4.5" />
 		{:else if kind === 'ground'}

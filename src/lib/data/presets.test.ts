@@ -12,21 +12,22 @@ const EXPECTED_NON_REF_NODES: Record<string, number> = {
 	'dc-wheatstone-bridge': 3,
 	'dc-superposition-source-transform': 3,
 	'dc-steady-state-rlc': 3,
+	'dc-dependent-vcvs': 3,
 	'ac-rlc-phasor': 3,
 	'ac-multi-source-phasor': 4,
 	'ac-impedance-supernode': 4
 };
 
 describe('Curated Textbook DC & AC Presets', () => {
-	it('contains 9 unique presets spanning DC and AC modes with valid load references', () => {
-		expect(PRESETS.length).toBe(9);
+	it('contains 10 unique presets spanning DC and AC modes with valid load references', () => {
+		expect(PRESETS.length).toBe(10);
 
 		const ids = new Set(PRESETS.map((p) => p.id));
-		expect(ids.size).toBe(9);
+		expect(ids.size).toBe(10);
 
 		const dcCount = PRESETS.filter((p) => p.category === 'dc').length;
 		const acCount = PRESETS.filter((p) => p.category === 'ac').length;
-		expect(dcCount).toBe(6);
+		expect(dcCount).toBe(7);
 		expect(acCount).toBe(3);
 
 		for (const preset of PRESETS) {
@@ -61,6 +62,7 @@ describe('Curated Textbook DC & AC Presets', () => {
 		expect(full.allVerified).toBe(true);
 		expect(full.maxDiscrepancy).toBeLessThan(1e-8);
 
+		const isDependentPreset = preset.id === 'dc-dependent-vcvs';
 		for (const methodId of [
 			'kcl_kvl',
 			'nodal',
@@ -70,9 +72,13 @@ describe('Curated Textbook DC & AC Presets', () => {
 			'thevenin_norton'
 		] as const) {
 			const mRes = full.methods[methodId]!;
-			expect(mRes.applicable).toBe(true);
-			expect(mRes.verifiedAgainstMna).toBe(true);
-			expect(mRes.maxDiscrepancy!).toBeLessThan(1e-8);
+			if (isDependentPreset && methodId === 'source_transform') {
+				expect(mRes.applicable).toBe(false);
+			} else {
+				expect(mRes.applicable).toBe(true);
+				expect(mRes.verifiedAgainstMna).toBe(true);
+				expect(mRes.maxDiscrepancy!).toBeLessThan(1e-8);
+			}
 		}
 	});
 
@@ -109,6 +115,13 @@ describe('Curated Textbook DC & AC Presets', () => {
 		expect(rlcDcSol.branches['C1'].voltage.re).toBeCloseTo(12, 9);
 		expect(rlcDcSol.branches['L1'].voltage.re).toBeCloseTo(0, 9);
 		expect(rlcDcSol.branches['L1'].current.re).toBeCloseTo(3, 9);
+
+		// 7. DC Dependent Source (VCVS): V(R1) = 6 V, V(R2) = 10 V, V(E1) = 12 V, I(R3) = -1 mA
+		const depSol = solveMNA(getPresetById('dc-dependent-vcvs')!.document);
+		expect(depSol.branches['R1'].voltage.re).toBeCloseTo(6, 9);
+		expect(depSol.branches['R2'].voltage.re).toBeCloseTo(10, 9);
+		expect(depSol.branches['E1'].voltage.re).toBeCloseTo(12, 9);
+		expect(depSol.branches['R3'].current.re).toBeCloseTo(-0.001, 9);
 	});
 
 	it('matches exact analytical solution on ac-impedance-supernode preset', () => {

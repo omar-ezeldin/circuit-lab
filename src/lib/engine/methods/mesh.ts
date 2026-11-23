@@ -9,16 +9,25 @@
  */
 
 import { Complex } from '../complex';
-import { buildElectricalGraph, parseSourceValue } from '../graph';
+import {
+	buildElectricalGraph,
+	parseDependentGain,
+	parseSourceValue,
+	resolveDependentControlNodes
+} from '../graph';
 import { matrixToLatex, solveComplexLinearSystem } from '../linalg';
-import type {
-	CircuitComponent,
-	CircuitDocument,
-	MethodResult,
-	MnaSolution,
-	SolutionStep
+import {
+	isDependentCurrentSource,
+	isDependentSourceKind,
+	isDependentVoltageSource,
+	type CircuitComponent,
+	type CircuitDocument,
+	type MethodResult,
+	type MnaSolution,
+	type SolutionStep
 } from '../types';
 import {
+	formatDependentSourceExpr,
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
@@ -542,23 +551,156 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 		};
 	}
 
-	// Identify current sources: perimeter (1 mesh) vs shared (2 meshes -> Supermesh!)
-	const perimeterCS: Array<{ edge: MultiEdge; meshId: number; dir: 1 | -1; is: Complex }> = [];
+	interface MeshLinearExpr {
+		terms: Map<number, Complex>;
+		constant: Complex;
+	}
+
+	const addMeshTerm = (map: Map<number, Complex>, meshId: number, coeff: Complex) => {
+		const prev = map.get(meshId);
+		map.set(meshId, prev ? prev.add(coeff) : coeff);
+	};
+
+	const scaleMeshExpr = (expr: MeshLinearExpr, factor: Complex): MeshLinearExpr => {
+		const terms = new Map<number, Complex>();
+		for (const [m, c] of expr.terms.entries()) {
+			terms.set(m, c.mul(factor));
+		}
+		return { terms, constant: expr.constant.mul(factor) };
+	};
+
+	const edgeByCompId = new Map<string, MultiEdge>();
+	for (const e of conductingEdges) edgeByCompId.set(e.comp.id, e);
+
+	// Adjacency of non-current-source conducting edges (for finding voltage paths between any two nodes)
+	const voltagePathAdj = new Map<string, Array<{ edge: MultiEdge; other: string; dir: 1 | -1 }>>();
+	for (const v of allVerts) voltagePathAdj.set(v, []);
+	for (const e of conductingEdges) {
+		if (e.comp.kind === 'current_source' || isDependentCurrentSource(e.comp.kind)) continue;
+		voltagePathAdj.get(e.u)!.push({ edge: e, other: e.v, dir: 1 });
+		voltagePathAdj.get(e.v)!.push({ edge: e, other: e.u, dir: -1 });
+	}
+
+	const resolveBranchCurrentInMeshes = (compId: string): MeshLinearExpr => {
+		const edge = edgeByCompId.get(compId);
+		const terms = new Map<number, Complex>();
+		if (!edge) return { terms, constant: Complex.zero() };
+		for (const { meshId, dir } of edgeIncidence.get(edge.id) ?? []) {
+			addMeshTerm(terms, meshId, Complex.from(dir, 0));
+		}
+		return { terms, constant: Complex.zero() };
+	};
+
+	const resolveNodeDiffVoltageInMeshes = (
+		startNode: string,
+		endNode: string,
+		visited: Set<string>
+	): MeshLinearExpr | null => {
+		if (startNode === endNode) return { terms: new Map(), constant: Complex.zero() };
+		const visitedNodes = new Set<string>([startNode]);
+		const parent = new Map<string, { prev: string; edge: MultiEdge; dir: 1 | -1 }>();
+		const queue = [startNode];
+		let found = false;
+
+		while (queue.length > 0) {
+			const u = queue.shift()!;
+			if (u === endNode) {
+				found = true;
+				break;
+			}
+			for (const step of voltagePathAdj.get(u) ?? []) {
+				if (!visitedNodes.has(step.other)) {
+					visitedNodes.add(step.other);
+					parent.set(step.other, { prev: u, edge: step.edge, dir: step.dir });
+					queue.push(step.other);
+				}
+			}
+		}
+
+		if (!found) return null;
+
+		const terms = new Map<number, Complex>();
+		let constant = Complex.zero();
+		let cur = endNode;
+		while (cur !== startNode) {
+			const step = parent.get(cur)!;
+			const edgeV = resolveEdgeVoltageInMeshes(step.edge, visited);
+			if (!edgeV) return null;
+			const s = Complex.from(step.dir, 0);
+			for (const [m, c] of edgeV.terms.entries()) {
+				addMeshTerm(terms, m, c.mul(s));
+			}
+			constant = constant.add(edgeV.constant.mul(s));
+			cur = step.prev;
+		}
+		return { terms, constant };
+	};
+
+	const resolveEdgeVoltageInMeshes = (
+		edge: MultiEdge,
+		visited: Set<string>
+	): MeshLinearExpr | null => {
+		const comp = edge.comp;
+		if (visited.has(comp.id)) return null;
+		visited.add(comp.id);
+
+		let res: MeshLinearExpr | null = null;
+		if (comp.kind === 'voltage_source') {
+			res = { terms: new Map(), constant: parseSourceValue(comp, mode)! };
+		} else if (comp.kind === 'vcvs') {
+			const ctrl = resolveDependentControlNodes(comp, graph)!;
+			const pol = comp.controlRef?.controlPolarity ?? 1;
+			const av = parseDependentGain(comp, mode)!.scale(pol);
+			const ctrlV = resolveNodeDiffVoltageInMeshes(ctrl.ctrlPos, ctrl.ctrlNeg, visited);
+			if (ctrlV) res = scaleMeshExpr(ctrlV, av);
+		} else if (comp.kind === 'ccvs') {
+			const pol = comp.controlRef?.controlPolarity ?? 1;
+			const rm = parseDependentGain(comp, mode)!.scale(pol);
+			const ctrlI = resolveBranchCurrentInMeshes(comp.controlRef!.controlBranchComponentId!);
+			res = scaleMeshExpr(ctrlI, rm);
+		} else if (comp.kind === 'resistor' || comp.kind === 'capacitor' || comp.kind === 'inductor') {
+			const z = getPassiveImpedance(comp, mode, freq);
+			if (!z || z.isZero(1e-15)) {
+				res = { terms: new Map(), constant: Complex.zero() };
+			} else {
+				res = scaleMeshExpr(resolveBranchCurrentInMeshes(comp.id), z);
+			}
+		}
+
+		visited.delete(comp.id);
+		return res;
+	};
+
+	const resolveDependentCurrentInMeshes = (comp: CircuitComponent): MeshLinearExpr | null => {
+		const pol = comp.controlRef?.controlPolarity ?? 1;
+		const gain = parseDependentGain(comp, mode)!.scale(pol);
+		if (comp.kind === 'vccs') {
+			const ctrl = resolveDependentControlNodes(comp, graph)!;
+			const ctrlV = resolveNodeDiffVoltageInMeshes(ctrl.ctrlPos, ctrl.ctrlNeg, new Set([comp.id]));
+			return ctrlV ? scaleMeshExpr(ctrlV, gain) : null;
+		}
+		if (comp.kind === 'cccs') {
+			const ctrlI = resolveBranchCurrentInMeshes(comp.controlRef!.controlBranchComponentId!);
+			return scaleMeshExpr(ctrlI, gain);
+		}
+		return null;
+	};
+
+	// Identify current sources (independent AND dependent): perimeter (1 mesh) vs shared (2 meshes -> Supermesh!)
+	const perimeterCS: Array<{ edge: MultiEdge; meshId: number; dir: 1 | -1 }> = [];
 	const sharedCS: Array<{
 		edge: MultiEdge;
 		mA: { meshId: number; dir: 1 | -1 };
 		mB: { meshId: number; dir: 1 | -1 };
-		is: Complex;
 	}> = [];
 
 	for (const e of conductingEdges) {
-		if (e.comp.kind !== 'current_source') continue;
+		if (e.comp.kind !== 'current_source' && !isDependentCurrentSource(e.comp.kind)) continue;
 		const inc = edgeIncidence.get(e.id)!;
-		const is = parseSourceValue(e.comp, mode)!;
 		if (inc.length === 1) {
-			perimeterCS.push({ edge: e, meshId: inc[0].meshId, dir: inc[0].dir, is });
+			perimeterCS.push({ edge: e, meshId: inc[0].meshId, dir: inc[0].dir });
 		} else if (inc.length === 2) {
-			sharedCS.push({ edge: e, mA: inc[0], mB: inc[1], is });
+			sharedCS.push({ edge: e, mA: inc[0], mB: inc[1] });
 		}
 	}
 
@@ -589,12 +731,18 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 	const rhs: Complex[] = Array.from({ length: M }, () => Complex.zero());
 	const kvlLatex: string[] = [];
 	const csLatex: string[] = [];
+	const dependentLatex: string[] = [];
 	let row = 0;
 
+	for (const comp of twoTerminal) {
+		if (!isDependentSourceKind(comp.kind)) continue;
+		const sub = latexSub(comp.label);
+		const lhs = isDependentVoltageSource(comp.kind) ? `V_{${sub}}` : `I_{${sub}}`;
+		dependentLatex.push(`${lhs} = ${formatDependentSourceExpr(comp, doc, mode)}`);
+	}
+
 	// Helper to write KVL around the boundary of a set of meshes (canceling internal shared edges)
-	const writeSupermeshKvl = (groupMeshIds: number[]) => {
-		// Accumulate net traversal multiplier for each non-CS edge across all meshes in group
-		// Notice: for an internal shared edge, it appears in two meshes with +1 and -1 -> cancels out!
+	const writeSupermeshKvl = (groupMeshIds: number[]): boolean => {
 		const netEdgeDir = new Map<number, number>();
 		for (const mId of groupMeshIds) {
 			for (const ref of meshes[mId].edges) {
@@ -606,10 +754,11 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 		for (const [edgeId, netDir] of netEdgeDir.entries()) {
 			if (netDir === 0) continue;
 			const edge = conductingEdges[edgeId];
-			if (edge.comp.kind === 'current_source') continue;
+			if (edge.comp.kind === 'current_source' || isDependentCurrentSource(edge.comp.kind)) {
+				continue;
+			}
 
 			if (edge.comp.kind === 'voltage_source') {
-				// Traversing pin0 -> pin1 drops voltage by +V_s
 				const vs = parseSourceValue(edge.comp, mode)!;
 				rhs[row] = rhs[row].sub(vs.scale(netDir));
 				const signStr = netDir > 0 ? '+' : '-';
@@ -617,10 +766,21 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 				continue;
 			}
 
+			if (isDependentVoltageSource(edge.comp.kind)) {
+				const vExpr = resolveEdgeVoltageInMeshes(edge, new Set());
+				if (!vExpr) return false;
+				for (const [m, c] of vExpr.terms.entries()) {
+					Z[row][m] = Z[row][m].add(c.scale(netDir));
+				}
+				rhs[row] = rhs[row].sub(vExpr.constant.scale(netDir));
+				const exprTex = formatDependentSourceExpr(edge.comp, doc, mode);
+				terms.push(`${netDir > 0 ? '+' : '-'} ${exprTex}`);
+				continue;
+			}
+
 			const zBranch = getPassiveImpedance(edge.comp, mode, freq);
 			if (!zBranch || zBranch.isZero(1e-15)) continue;
 
-			// Branch voltage drop along traversal = netDir * Z * sum_{m in edge} dir_{m,edge} * I_m
 			const inc = edgeIncidence.get(edgeId)!;
 			const meshCombo: string[] = [];
 			for (const { meshId, dir } of inc) {
@@ -651,6 +811,7 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 			kvlLatex.push(`${prefix}${eqBody} = 0`);
 		}
 		row++;
+		return true;
 	};
 
 	for (const groupMeshIds of supermeshGroups.values()) {
@@ -661,29 +822,79 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 		);
 
 		for (const p of groupPerim) {
-			Z[row][p.meshId] = Complex.from(p.dir, 0);
-			rhs[row] = p.is;
+			Z[row][p.meshId] = Z[row][p.meshId].add(Complex.from(p.dir, 0));
 			const sign = p.dir > 0 ? '' : '-';
-			csLatex.push(
-				`\\text{${latexSub(p.edge.comp.label)} (perimeter):}\\; ${sign}I_{m${p.meshId + 1}} = ${formatLatexValue(p.is, mode)}\\text{ A}`
-			);
+			if (p.edge.comp.kind === 'current_source') {
+				const is = parseSourceValue(p.edge.comp, mode)!;
+				rhs[row] = rhs[row].add(is);
+				csLatex.push(
+					`\\text{${latexSub(p.edge.comp.label)} (perimeter):}\\; ${sign}I_{m${p.meshId + 1}} = ${formatLatexValue(is, mode)}\\text{ A}`
+				);
+			} else {
+				const depI = resolveDependentCurrentInMeshes(p.edge.comp);
+				if (!depI) {
+					return {
+						methodId: 'mesh',
+						title,
+						applicable: false,
+						inapplicableReason: `Could not express dependent current source ${p.edge.comp.label} in terms of mesh currents.`,
+						steps: []
+					};
+				}
+				for (const [m, c] of depI.terms.entries()) {
+					Z[row][m] = Z[row][m].sub(c);
+				}
+				rhs[row] = rhs[row].add(depI.constant);
+				csLatex.push(
+					`\\text{${latexSub(p.edge.comp.label)} (perimeter):}\\; ${sign}I_{m${p.meshId + 1}} = ${formatDependentSourceExpr(p.edge.comp, doc, mode)}`
+				);
+			}
 			row++;
 		}
 
 		for (const s of groupShared) {
-			Z[row][s.mA.meshId] = Complex.from(s.mA.dir, 0);
-			Z[row][s.mB.meshId] = Complex.from(s.mB.dir, 0);
-			rhs[row] = s.is;
+			Z[row][s.mA.meshId] = Z[row][s.mA.meshId].add(Complex.from(s.mA.dir, 0));
+			Z[row][s.mB.meshId] = Z[row][s.mB.meshId].add(Complex.from(s.mB.dir, 0));
 			const tA = `${s.mA.dir > 0 ? '' : '-'}I_{m${s.mA.meshId + 1}}`;
 			const tB = `${s.mB.dir > 0 ? '+' : '-'} I_{m${s.mB.meshId + 1}}`;
-			csLatex.push(
-				`\\text{${latexSub(s.edge.comp.label)} (supermesh):}\\; ${tA} ${tB} = ${formatLatexValue(s.is, mode)}\\text{ A}`
-			);
+			if (s.edge.comp.kind === 'current_source') {
+				const is = parseSourceValue(s.edge.comp, mode)!;
+				rhs[row] = rhs[row].add(is);
+				csLatex.push(
+					`\\text{${latexSub(s.edge.comp.label)} (supermesh):}\\; ${tA} ${tB} = ${formatLatexValue(is, mode)}\\text{ A}`
+				);
+			} else {
+				const depI = resolveDependentCurrentInMeshes(s.edge.comp);
+				if (!depI) {
+					return {
+						methodId: 'mesh',
+						title,
+						applicable: false,
+						inapplicableReason: `Could not express dependent current source ${s.edge.comp.label} in terms of mesh currents.`,
+						steps: []
+					};
+				}
+				for (const [m, c] of depI.terms.entries()) {
+					Z[row][m] = Z[row][m].sub(c);
+				}
+				rhs[row] = rhs[row].add(depI.constant);
+				csLatex.push(
+					`\\text{${latexSub(s.edge.comp.label)} (supermesh):}\\; ${tA} ${tB} = ${formatDependentSourceExpr(s.edge.comp, doc, mode)}`
+				);
+			}
 			row++;
 		}
 
 		if (groupPerim.length === 0) {
-			writeSupermeshKvl(groupMeshIds);
+			if (!writeSupermeshKvl(groupMeshIds)) {
+				return {
+					methodId: 'mesh',
+					title,
+					applicable: false,
+					inapplicableReason: 'Could not express dependent source controlling voltage in terms of mesh currents.',
+					steps: []
+				};
+			}
 		}
 	}
 
@@ -740,31 +951,41 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 		return `I_{${s}} = ${formatLatexValue(branchCurrents[c.id], mode)}\\text{ A}`;
 	});
 
-	const steps: SolutionStep[] = [
-		{
-			title: '1. Planar Mesh Identification',
-			description: `Extracted ${M} independent planar window meshes from the conducting multigraph.`,
-			latex: meshDescribeLatex
-		}
-	];
+	const steps: SolutionStep[] = [];
+	let stepNum = 1;
+
+	steps.push({
+		title: `${stepNum++}. Planar Mesh Identification`,
+		description: `Extracted ${M} independent planar window meshes from the conducting multigraph.`,
+		latex: meshDescribeLatex
+	});
+
+	if (dependentLatex.length > 0) {
+		steps.push({
+			title: `${stepNum++}. Dependent Source Controlling Variables`,
+			description:
+				'Express each dependent source controlling variable in terms of mesh currents before substituting into KVL and supermesh equations.',
+			latex: dependentLatex
+		});
+	}
 
 	if (csLatex.length > 0) {
 		steps.push({
-			title: '2. Supermesh & Current-Source Constraints',
+			title: `${stepNum++}. Supermesh & Current-Source Constraints`,
 			description:
-				'Current sources either fix perimeter mesh currents directly or form supermeshes combining adjacent meshes.',
+				'Current sources (independent or dependent) either fix perimeter mesh currents or form supermeshes combining adjacent meshes.',
 			latex: csLatex
 		});
 	}
 
 	steps.push({
-		title: `${csLatex.length > 0 ? '3' : '2'}. Mesh KVL Equations`,
+		title: `${stepNum++}. Mesh KVL Equations`,
 		description: 'Sum voltage drops around each independent mesh and supermesh to zero.',
 		latex: kvlLatex.length > 0 ? kvlLatex : ['\\text{All mesh currents are fixed directly by current sources.}']
 	});
 
 	steps.push({
-		title: `${csLatex.length > 0 ? '4' : '3'}. Mesh Matrix System`,
+		title: `${stepNum++}. Mesh Matrix System`,
 		description: `Assembled ${M}×${M} mesh impedance & constraint matrix.`,
 		matrixLatex: matrixToLatex(
 			Z,
@@ -774,7 +995,7 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 	});
 
 	steps.push({
-		title: `${csLatex.length > 0 ? '5' : '4'}. Solved Mesh & Branch Currents`,
+		title: `${stepNum++}. Solved Mesh & Branch Currents`,
 		description: 'Computed mesh currents and combined overlapping mesh currents per branch.',
 		latex: [...solvedMeshLatex, ...branchLatex.slice(0, 6)]
 	});

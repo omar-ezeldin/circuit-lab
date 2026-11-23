@@ -14,22 +14,25 @@
 import { Complex } from '../complex';
 import { buildElectricalGraph } from '../graph';
 import { solveMNA } from '../mna';
-import type {
-	CircuitComponent,
-	CircuitDocument,
-	MaxPowerTransferInfo,
-	MethodResult,
-	MnaSolution,
-	SolutionStep,
-	TheveninNortonResult,
-	TheveninTarget
+import {
+	isDependentSourceKind,
+	type CircuitComponent,
+	type CircuitDocument,
+	type MaxPowerTransferInfo,
+	type MethodResult,
+	type MnaSolution,
+	type SolutionStep,
+	type TheveninNortonResult,
+	type TheveninTarget
 } from '../types';
 import {
 	buildDeactivatedDocument,
+	buildPortTestWires,
 	formatLatexValue,
 	getPassiveImpedance,
 	latexSub,
-	MNA_VERIFICATION_TOL
+	MNA_VERIFICATION_TOL,
+	remapDependentControlNodes
 } from './shared';
 
 function mapOriginalNodeToSubGraph(
@@ -70,7 +73,22 @@ export function resolveTheveninTarget(
 		}
 	}
 
+	// Avoid auto-selecting a passive component that is sensed as a controlling variable by a dependent source
+	const sensedIds = new Set<string>();
+	for (const c of doc.components) {
+		if (!isDependentSourceKind(c.kind) || !c.controlRef) continue;
+		if (c.controlRef.controlComponentId) sensedIds.add(c.controlRef.controlComponentId);
+		if (c.controlRef.controlBranchComponentId) sensedIds.add(c.controlRef.controlBranchComponentId);
+	}
+
 	const resistors = doc.components.filter((c) => c.kind === 'resistor');
+	const nonSensedResistors = resistors.filter((r) => !sensedIds.has(r.id));
+	if (nonSensedResistors.length > 0) {
+		return {
+			kind: 'component',
+			componentId: nonSensedResistors[nonSensedResistors.length - 1].id
+		};
+	}
 	if (resistors.length > 0) {
 		return { kind: 'component', componentId: resistors[resistors.length - 1].id };
 	}
@@ -78,6 +96,13 @@ export function resolveTheveninTarget(
 	const passives = doc.components.filter(
 		(c) => c.kind === 'capacitor' || c.kind === 'inductor'
 	);
+	const nonSensedPassives = passives.filter((p) => !sensedIds.has(p.id));
+	if (nonSensedPassives.length > 0) {
+		return {
+			kind: 'component',
+			componentId: nonSensedPassives[nonSensedPassives.length - 1].id
+		};
+	}
 	if (passives.length > 0) {
 		return { kind: 'component', componentId: passives[passives.length - 1].id };
 	}
@@ -137,6 +162,21 @@ export function solveTheveninNorton(
 				}
 			};
 		}
+		if (
+			loadComp.kind === 'voltage_source' ||
+			loadComp.kind === 'current_source' ||
+			isDependentSourceKind(loadComp.kind)
+		) {
+			return {
+				methodResult: {
+					methodId: 'thevenin_norton',
+					title,
+					applicable: false,
+					inapplicableReason: `${loadComp.label} is a source, not a load. Pick the load element (or place port terminals A and B) to find the Thévenin equivalent seen by it.`,
+					steps: []
+				}
+			};
+		}
 		[origNodeA, origNodeB] = origGraph.componentNodes[loadComp.id];
 	} else {
 		origNodeA = resolvedTarget.nodeA;
@@ -155,9 +195,10 @@ export function solveTheveninNorton(
 	}
 
 	// Build open-circuit network (without loadComp if targeting a component)
-	const openDoc: CircuitDocument = loadComp
+	const rawOpenDoc: CircuitDocument = loadComp
 		? { ...doc, components: doc.components.filter((c) => c.id !== loadComp!.id) }
 		: doc;
+	const openDoc = remapDependentControlNodes(origGraph, rawOpenDoc);
 	const openGraph = buildElectricalGraph(openDoc);
 	const openSol = solveMNA(openDoc, {
 		frequencyHz: freq,
@@ -195,14 +236,19 @@ export function solveTheveninNorton(
 	const vBOpen = openSol.nodeVoltages[openNodeB]?.voltage ?? Complex.zero();
 	const vth = vAOpen.sub(vBOpen);
 
-	// 2. Equivalent impedance Z_th via 1 A test current source (from B -> A) on deactivated network
-	const deactivatedDoc = buildDeactivatedDocument(openDoc, null);
+	// 2. Equivalent impedance Z_th via Test-Source Method on deactivated network
+	//    (ONLY independent sources are deactivated; ALL dependent sources remain active!)
+	const dependentSources = openDoc.components.filter((c) => isDependentSourceKind(c.kind));
+	const deactivatedDoc = remapDependentControlNodes(
+		openGraph,
+		buildDeactivatedDocument(openDoc, null)
+	);
 	// Find grid coordinates for openNodeA and openNodeB in openGraph
 	const ptA = openGraph.nodes[openNodeA].gridPoints[0];
 	const ptB = openGraph.nodes[openNodeB].gridPoints[0];
 
-	// Place a synthetic 1 A test current source far from schematic coordinates with prime offset
-	// so its connecting wires cannot accidentally collide with any intermediate grid pin.
+	// Synthetic 1 A test current source far from the schematic; buildPortTestWires routes its
+	// wires so they cannot pass through (and merge with) any other pin on the way.
 	const testComp: CircuitComponent = {
 		id: '__thevenin_itest__',
 		kind: 'current_source',
@@ -212,15 +258,20 @@ export function solveTheveninNorton(
 		rotation: 0, // pin0 at (1000001, 1000019) -> B, pin1 at (1000005, 1000019) -> A
 		value: '1'
 	};
-	const testDoc: CircuitDocument = {
+	const testDoc: CircuitDocument = remapDependentControlNodes(openGraph, {
 		...deactivatedDoc,
 		components: [...deactivatedDoc.components, testComp],
 		wires: [
 			...deactivatedDoc.wires,
-			{ id: '__thevenin_wB__', points: [{ x: 1000001, y: 1000019 }, ptB] },
-			{ id: '__thevenin_wA__', points: [{ x: 1000005, y: 1000019 }, ptA] }
+			...buildPortTestWires(
+				'__thevenin_',
+				{ x: 1000001, y: 1000019 },
+				ptB,
+				{ x: 1000005, y: 1000019 },
+				ptA
+			)
 		]
-	};
+	});
 
 	const testGraph = buildElectricalGraph(testDoc);
 	const testSol = solveMNA(testDoc, {
@@ -229,11 +280,44 @@ export function solveTheveninNorton(
 	});
 
 	let zth: Complex | null = null;
+	let usedVoltageTestSource = false;
 	if (testSol.valid) {
 		const [tNodeB, tNodeA] = testGraph.componentNodes[testComp.id];
 		const vTestA = testSol.nodeVoltages[tNodeA]?.voltage ?? Complex.zero();
 		const vTestB = testSol.nodeVoltages[tNodeB]?.voltage ?? Complex.zero();
 		zth = vTestA.sub(vTestB); // I_test = 1 A into A, out of B => Z_th = V_A - V_B
+	} else {
+		// Fallback: apply a 1 V test voltage source from A (+) to B (-) and compute Z_th = 1 V / I_into_A
+		const vTestComp: CircuitComponent = {
+			id: '__thevenin_vtest__',
+			kind: 'voltage_source',
+			label: 'V_test',
+			x: 1000003,
+			y: 1000019,
+			rotation: 0, // pin0 (+) -> A, pin1 (-) -> B
+			value: '1'
+		};
+		const vTestDoc: CircuitDocument = remapDependentControlNodes(openGraph, {
+			...deactivatedDoc,
+			components: [...deactivatedDoc.components, vTestComp],
+			wires: [
+				...deactivatedDoc.wires,
+				{ id: '__thevenin_wA__', points: [{ x: 1000001, y: 1000019 }, ptA] },
+				{ id: '__thevenin_wB__', points: [{ x: 1000005, y: 1000019 }, ptB] }
+			]
+		});
+		const vTestSol = solveMNA(vTestDoc, {
+			frequencyHz: freq,
+			acMagnitudeMode: mna.acMagnitudeMode
+		});
+		if (vTestSol.valid && vTestSol.branches[vTestComp.id]) {
+			// Passive sign convention: I_vtest flows + -> - (A -> B inside source), so current into network at A is -I_vtest
+			const iIntoA = vTestSol.branches[vTestComp.id].current.neg();
+			if (!iIntoA.isZero(1e-12)) {
+				zth = Complex.one().div(iIntoA);
+				usedVoltageTestSource = true;
+			}
+		}
 	}
 
 	// 3. Norton Short-Circuit Current I_N
@@ -333,12 +417,17 @@ export function solveTheveninNorton(
 			latex: [`V_{th} = V_{${origNodeA}} - V_{${origNodeB}} = ${formatLatexValue(vth, mode)}\\text{ V}`]
 		},
 		{
-			title: '3. Equivalent Impedance (Z_th) & Norton Current (I_N)',
+			title:
+				dependentSources.length > 0
+					? '3. Equivalent Impedance (Z_th — Test-Source Method) & Norton Current (I_N)'
+					: '3. Equivalent Impedance (Z_th) & Norton Current (I_N)',
 			description:
-				'Deactivated all independent sources and applied a 1 A test source from B to A to find Z_th = V_test / 1 A.',
+				dependentSources.length > 0
+					? `Deactivated ONLY independent sources while keeping dependent source(s) (${dependentSources.map((d) => d.label).join(', ')}) active. Applied a ${usedVoltageTestSource ? '1 V test voltage source across A–B' : '1 A test current source from B to A'} to compute Z_th = V_test / I_test.`
+					: `Deactivated all independent sources and applied a ${usedVoltageTestSource ? '1 V test voltage source across A–B' : '1 A test source from B to A'} to find Z_th = V_test / I_test.`,
 			latex: [
 				zth !== null
-					? `Z_{th} = ${formatLatexValue(zth, mode)}\\;\\Omega`
+					? `Z_{th} = \\frac{V_{\\text{test}}}{I_{\\text{test}}} = ${formatLatexValue(zth, mode)}\\;\\Omega`
 					: `Z_{th} = \\infty\\;\\Omega\\;(\\text{open port})`,
 				isc !== null
 					? `I_N = \\frac{V_{th}}{Z_{th}} = ${formatLatexValue(isc, mode)}\\text{ A}`

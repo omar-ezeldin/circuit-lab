@@ -98,7 +98,11 @@ const KNOWN_UNITS = new Set([
 	'w',
 	'va',
 	'var',
-	's'
+	's',
+	'v/v',
+	'a/v',
+	'v/a',
+	'a/a'
 ]);
 
 const DISPLAY_PREFIXES: Array<{ exp: number; symbol: string; factor: number }> = [
@@ -157,6 +161,19 @@ function stripUnitSuffix(tail: string): { prefixFactor: number; valid: boolean }
 }
 
 /**
+ * Normalises text pasted from PDFs/Word: Unicode minus and dashes (−, –, —) become "-", and
+ * resistor-code values put the prefix in place of the decimal point ("4k7" -> "4.7k",
+ * "2M2" -> "2.2M", "4R7" -> "4.7").
+ */
+export function normalizeNumericText(input: string): string {
+	return input
+		.replace(/[\u2212\u2012\u2013\u2014\uFE63\uFF0D]/g, '-')
+		.replace(/^([+-]?\d+)([pnuµμmkKMGR])(\d+)(?![\d.])/, (_m, int: string, p: string, frac: string) =>
+			p === 'R' ? `${int}.${frac}` : `${int}.${frac}${p}`
+		);
+}
+
+/**
  * Parses an engineering number with optional SI prefix and unit.
  * Examples: "10k" -> 10000, "4.7u" -> 4.7e-6, "100m" -> 0.1, "2.2M" -> 2.2e6, "470 Ω" -> 470.
  * Returns `null` if the string cannot be parsed.
@@ -165,7 +182,7 @@ export function parseEngineeringNumber(input: string | number): number | null {
 	if (typeof input === 'number') {
 		return Number.isFinite(input) ? input : null;
 	}
-	const trimmed = input.trim();
+	const trimmed = normalizeNumericText(input.trim());
 	if (!trimmed) return null;
 
 	const match = trimmed.match(/^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*(.*)$/);
@@ -217,7 +234,10 @@ export function parseComplexValue(input: string | number): Complex | null {
 		return Number.isFinite(input) ? Complex.from(input, 0) : null;
 	}
 	// Strip optional trailing Ω / ohm / ohms (case-insensitive) and matching outer parentheses
-	const withoutOhm = input.trim().replace(/\s*(?:Ω|ohms?)\s*$/i, '').trim();
+	const withoutOhm = input
+		.trim()
+		.replace(/[\u2212\u2012\u2013\u2014\uFE63\uFF0D]/g, '-')
+		.replace(/\s*(?:Ω|ohms?)\s*$/i, '').trim();
 	const trimmed = unwrapOuterParens(withoutOhm);
 	if (!trimmed) return null;
 

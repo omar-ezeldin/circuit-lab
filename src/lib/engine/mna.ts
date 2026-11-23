@@ -16,19 +16,23 @@ import { Complex } from './complex';
 import {
 	buildElectricalGraph,
 	getPassiveImpedance,
+	parseDependentGain,
 	parseSourceValue,
+	resolveDependentControlNodes,
 	validateCircuitTopology
 } from './graph';
 import { solveComplexLinearSystem } from './linalg';
-import type {
-	AcMagnitudeMode,
-	BranchResult,
-	CircuitComponent,
-	CircuitDocument,
-	MnaSolution,
-	NodeResult,
-	PowerSummary,
-	ValidationDiagnostic
+import {
+	isDependentSourceKind,
+	isDependentVoltageSource,
+	type AcMagnitudeMode,
+	type BranchResult,
+	type CircuitComponent,
+	type CircuitDocument,
+	type MnaSolution,
+	type NodeResult,
+	type PowerSummary,
+	type ValidationDiagnostic
 } from './types';
 
 export interface SolveMnaOptions {
@@ -128,13 +132,147 @@ export function stampCurrentSource(
 	}
 }
 
-/*
- * Reserved v2 dependent source stampers (plug directly into MnaStampContext):
- * - stampVCCS(ctx, outA, outB, ctrlPos, ctrlNeg, gm)
- * - stampVCVS(ctx, auxIdx, outA, outB, ctrlPos, ctrlNeg, av)
- * - stampCCCS(ctx, outA, outB, ctrlAuxIdx, beta)
- * - stampCCVS(ctx, auxIdx, outA, outB, ctrlAuxIdx, rm)
+/**
+ * Stamps a Voltage-Controlled Current Source (VCCS) forcing
+ * I(outA -> outB) = gm * (V(ctrlPos) - V(ctrlNeg)).
  */
+export function stampVCCS(
+	ctx: MnaStampContext,
+	outA: string,
+	outB: string,
+	ctrlPos: string,
+	ctrlNeg: string,
+	gm: Complex
+): void {
+	const a = ctx.nodeIndex.get(outA);
+	const b = ctx.nodeIndex.get(outB);
+	const cp = ctx.nodeIndex.get(ctrlPos);
+	const cn = ctx.nodeIndex.get(ctrlNeg);
+
+	if (a !== undefined) {
+		if (cp !== undefined) ctx.A[a][cp] = ctx.A[a][cp].add(gm);
+		if (cn !== undefined) ctx.A[a][cn] = ctx.A[a][cn].sub(gm);
+	}
+	if (b !== undefined) {
+		if (cp !== undefined) ctx.A[b][cp] = ctx.A[b][cp].sub(gm);
+		if (cn !== undefined) ctx.A[b][cn] = ctx.A[b][cn].add(gm);
+	}
+}
+
+/**
+ * Stamps a Voltage-Controlled Voltage Source (VCVS) enforcing
+ * V(outA) - V(outB) = av * (V(ctrlPos) - V(ctrlNeg)),
+ * with auxiliary branch current unknown at `ctx.numNodes + auxIdx` flowing outA -> outB.
+ */
+export function stampVCVS(
+	ctx: MnaStampContext,
+	auxIdx: number,
+	outA: string,
+	outB: string,
+	ctrlPos: string,
+	ctrlNeg: string,
+	av: Complex
+): void {
+	const row = ctx.numNodes + auxIdx;
+	const a = ctx.nodeIndex.get(outA);
+	const b = ctx.nodeIndex.get(outB);
+	const cp = ctx.nodeIndex.get(ctrlPos);
+	const cn = ctx.nodeIndex.get(ctrlNeg);
+	const one = Complex.one();
+
+	if (a !== undefined) {
+		ctx.A[a][row] = ctx.A[a][row].add(one);
+		ctx.A[row][a] = ctx.A[row][a].add(one);
+	}
+	if (b !== undefined) {
+		ctx.A[b][row] = ctx.A[b][row].sub(one);
+		ctx.A[row][b] = ctx.A[row][b].sub(one);
+	}
+	if (cp !== undefined) {
+		ctx.A[row][cp] = ctx.A[row][cp].sub(av);
+	}
+	if (cn !== undefined) {
+		ctx.A[row][cn] = ctx.A[row][cn].add(av);
+	}
+}
+
+/**
+ * Stamps a Current-Controlled Current Source (CCCS) forcing
+ * I(outA -> outB) = beta * I_ctrl, where I_ctrl is the auxiliary unknown at `ctx.numNodes + ctrlAuxIdx`.
+ */
+export function stampCCCS(
+	ctx: MnaStampContext,
+	outA: string,
+	outB: string,
+	ctrlAuxIdx: number,
+	beta: Complex
+): void {
+	const a = ctx.nodeIndex.get(outA);
+	const b = ctx.nodeIndex.get(outB);
+	const ctrlCol = ctx.numNodes + ctrlAuxIdx;
+
+	if (a !== undefined) {
+		ctx.A[a][ctrlCol] = ctx.A[a][ctrlCol].add(beta);
+	}
+	if (b !== undefined) {
+		ctx.A[b][ctrlCol] = ctx.A[b][ctrlCol].sub(beta);
+	}
+}
+
+/**
+ * Stamps a Current-Controlled Voltage Source (CCVS) enforcing
+ * V(outA) - V(outB) = rm * I_ctrl, where I_ctrl is the auxiliary unknown at `ctx.numNodes + ctrlAuxIdx`.
+ */
+export function stampCCVS(
+	ctx: MnaStampContext,
+	auxIdx: number,
+	outA: string,
+	outB: string,
+	ctrlAuxIdx: number,
+	rm: Complex
+): void {
+	const row = ctx.numNodes + auxIdx;
+	const ctrlCol = ctx.numNodes + ctrlAuxIdx;
+	const a = ctx.nodeIndex.get(outA);
+	const b = ctx.nodeIndex.get(outB);
+	const one = Complex.one();
+
+	if (a !== undefined) {
+		ctx.A[a][row] = ctx.A[a][row].add(one);
+		ctx.A[row][a] = ctx.A[row][a].add(one);
+	}
+	if (b !== undefined) {
+		ctx.A[b][row] = ctx.A[b][row].sub(one);
+		ctx.A[row][b] = ctx.A[row][b].sub(one);
+	}
+	ctx.A[row][ctrlCol] = ctx.A[row][ctrlCol].sub(rm);
+}
+
+interface CurrentLinearExpr {
+	terms: Map<number, Complex>;
+	constant: Complex;
+}
+
+function addLinearTerm(map: Map<number, Complex>, col: number, coeff: Complex): void {
+	const prev = map.get(col);
+	map.set(col, prev ? prev.add(coeff) : coeff);
+}
+
+function scaleLinearExpr(expr: CurrentLinearExpr, factor: Complex): CurrentLinearExpr {
+	const terms = new Map<number, Complex>();
+	for (const [col, coeff] of expr.terms.entries()) {
+		terms.set(col, coeff.mul(factor));
+	}
+	return { terms, constant: expr.constant.mul(factor) };
+}
+
+function evalLinearExpr(expr: CurrentLinearExpr, x: Complex[]): Complex {
+	let sum = expr.constant;
+	for (const [col, coeff] of expr.terms.entries()) {
+		sum = sum.add(coeff.mul(x[col]));
+	}
+	return sum;
+}
 
 function emptyPowerSummary(balanced = false): PowerSummary {
 	return {
@@ -165,6 +303,26 @@ function makeInvalidSolution(
 }
 
 /**
+ * Returns the distinct frequencies of the *active* (non-zero) independent sources when an AC
+ * circuit mixes frequencies, else undefined. Zeroed sources (e.g. deactivated by superposition)
+ * do not count, so per-source superposition sub-circuits are single-frequency.
+ */
+export function detectMultiFrequency(
+	doc: CircuitDocument,
+	frequencyHz: number
+): number[] | undefined {
+	if (doc.mode !== 'ac') return undefined;
+	const freqs = new Set<number>();
+	for (const comp of doc.components) {
+		if (comp.kind !== 'voltage_source' && comp.kind !== 'current_source') continue;
+		const val = parseSourceValue(comp, 'ac');
+		if (!val || val.abs() < 1e-15) continue;
+		freqs.add(comp.frequencyHz ?? frequencyHz);
+	}
+	return freqs.size > 1 ? [...freqs].sort((a, b) => a - b) : undefined;
+}
+
+/**
  * Solves a DC or AC steady-state linear circuit using Modified Nodal Analysis (MNA).
  */
 export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSolution {
@@ -180,6 +338,20 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 		return makeInvalidSolution(doc, frequencyHz, acMagnitudeMode, diagnostics);
 	}
 
+	const multiFrequencyHz = detectMultiFrequency(doc, frequencyHz);
+	if (multiFrequencyHz) {
+		diagnostics.push({
+			severity: 'warning',
+			code: 'MULTI_FREQUENCY',
+			message: `Sources run at different frequencies (${multiFrequencyHz
+				.map((f) => `${Number(f.toPrecision(4))} Hz`)
+				.join(', ')}). One phasor per node cannot describe this circuit, so node/branch values are hidden. Use the Superposition tab: it solves each frequency separately and adds the responses in the time domain.`,
+			componentIds: doc.components
+				.filter((c) => c.kind === 'voltage_source' || c.kind === 'current_source')
+				.map((c) => c.id)
+		});
+	}
+
 	const nodeOrder = graph.nonRefNodeIds;
 	const numNodes = nodeOrder.length;
 	const nodeIndex = new Map<string, number>();
@@ -193,10 +365,16 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 
 	// Components requiring auxiliary branch current unknowns in MNA
 	const voltageBranches: CircuitComponent[] = activeComps.filter(
-		(c) => c.kind === 'voltage_source' || (mode === 'dc' && c.kind === 'inductor')
+		(c) =>
+			c.kind === 'voltage_source' ||
+			isDependentVoltageSource(c.kind) ||
+			(mode === 'dc' && c.kind === 'inductor')
 	);
 	const voltageBranchAuxMap = new Map<string, number>();
 	voltageBranches.forEach((c, idx) => voltageBranchAuxMap.set(c.id, idx));
+
+	const compById = new Map<string, CircuitComponent>();
+	for (const c of activeComps) compById.set(c.id, c);
 
 	const dim = numNodes + voltageBranches.length;
 	const A: Complex[][] = Array.from({ length: dim }, () =>
@@ -207,6 +385,78 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 
 	const componentImpedance = new Map<string, Complex | null>();
 	const currentSourceValues = new Map<string, Complex>();
+	const dependentCurrentExprs = new Map<string, CurrentLinearExpr>();
+
+	const resolveBranchCurrentExpr = (
+		compId: string,
+		visited: Set<string>
+	): CurrentLinearExpr | null => {
+		if (visited.has(compId)) return null;
+		const target = compById.get(compId);
+		if (!target) return null;
+
+		visited.add(compId);
+		const [nA, nB] = graph.componentNodes[target.id];
+		const terms = new Map<number, Complex>();
+		let constant = Complex.zero();
+
+		switch (target.kind) {
+			case 'resistor':
+			case 'capacitor':
+			case 'inductor': {
+				const passive = getPassiveImpedance(target, mode, frequencyHz)!;
+				if (passive.kind === 'short') {
+					const auxIdx = voltageBranchAuxMap.get(target.id)!;
+					addLinearTerm(terms, numNodes + auxIdx, Complex.one());
+				} else if (passive.kind === 'impedance') {
+					const y = Complex.one().div(passive.z);
+					const ia = nodeIndex.get(nA);
+					const ib = nodeIndex.get(nB);
+					if (ia !== undefined) addLinearTerm(terms, ia, y);
+					if (ib !== undefined) addLinearTerm(terms, ib, y.neg());
+				}
+				break;
+			}
+			case 'voltage_source':
+			case 'vcvs':
+			case 'ccvs': {
+				const auxIdx = voltageBranchAuxMap.get(target.id)!;
+				addLinearTerm(terms, numNodes + auxIdx, Complex.one());
+				break;
+			}
+			case 'current_source': {
+				constant = parseSourceValue(target, mode)!;
+				break;
+			}
+			case 'vccs': {
+				const ctrl = resolveDependentControlNodes(target, graph)!;
+				const pol = target.controlRef?.controlPolarity ?? 1;
+				const gm = parseDependentGain(target, mode)!.scale(pol);
+				const cp = nodeIndex.get(ctrl.ctrlPos);
+				const cn = nodeIndex.get(ctrl.ctrlNeg);
+				if (cp !== undefined) addLinearTerm(terms, cp, gm);
+				if (cn !== undefined) addLinearTerm(terms, cn, gm.neg());
+				break;
+			}
+			case 'cccs': {
+				const subExpr = resolveBranchCurrentExpr(
+					target.controlRef!.controlBranchComponentId!,
+					visited
+				);
+				if (!subExpr) {
+					visited.delete(compId);
+					return null;
+				}
+				const pol = target.controlRef?.controlPolarity ?? 1;
+				const beta = parseDependentGain(target, mode)!.scale(pol);
+				visited.delete(compId);
+				return scaleLinearExpr(subExpr, beta);
+			}
+		}
+
+		visited.delete(compId);
+		return { terms, constant };
+	};
 
 	for (const comp of activeComps) {
 		const [nodeA, nodeB] = graph.componentNodes[comp.id];
@@ -242,6 +492,94 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 				const is = parseSourceValue(comp, mode)!;
 				stampCurrentSource(ctx, nodeA, nodeB, is);
 				currentSourceValues.set(comp.id, is);
+				componentImpedance.set(comp.id, null);
+				break;
+			}
+			case 'vccs': {
+				const ctrl = resolveDependentControlNodes(comp, graph)!;
+				const pol = comp.controlRef?.controlPolarity ?? 1;
+				const gm = parseDependentGain(comp, mode)!.scale(pol);
+				stampVCCS(ctx, nodeA, nodeB, ctrl.ctrlPos, ctrl.ctrlNeg, gm);
+				const exprTerms = new Map<number, Complex>();
+				const cp = nodeIndex.get(ctrl.ctrlPos);
+				const cn = nodeIndex.get(ctrl.ctrlNeg);
+				if (cp !== undefined) addLinearTerm(exprTerms, cp, gm);
+				if (cn !== undefined) addLinearTerm(exprTerms, cn, gm.neg());
+				dependentCurrentExprs.set(comp.id, { terms: exprTerms, constant: Complex.zero() });
+				componentImpedance.set(comp.id, null);
+				break;
+			}
+			case 'vcvs': {
+				const ctrl = resolveDependentControlNodes(comp, graph)!;
+				const pol = comp.controlRef?.controlPolarity ?? 1;
+				const av = parseDependentGain(comp, mode)!.scale(pol);
+				const auxIdx = voltageBranchAuxMap.get(comp.id)!;
+				stampVCVS(ctx, auxIdx, nodeA, nodeB, ctrl.ctrlPos, ctrl.ctrlNeg, av);
+				componentImpedance.set(comp.id, null);
+				break;
+			}
+			case 'cccs': {
+				const ctrlBranchId = comp.controlRef!.controlBranchComponentId!;
+				const pol = comp.controlRef?.controlPolarity ?? 1;
+				const beta = parseDependentGain(comp, mode)!.scale(pol);
+				const ctrlExpr = resolveBranchCurrentExpr(ctrlBranchId, new Set([comp.id]));
+				if (!ctrlExpr) {
+					diagnostics.push({
+						severity: 'error',
+						code: 'CIRCULAR_DEPENDENT_CONTROL',
+						message: `Dependent source ${comp.label} has a circular current-control dependency involving ${ctrlBranchId}.`,
+						componentIds: [comp.id, ctrlBranchId]
+					});
+					return makeInvalidSolution(doc, frequencyHz, acMagnitudeMode, diagnostics);
+				}
+				const scaled = scaleLinearExpr(ctrlExpr, beta);
+				dependentCurrentExprs.set(comp.id, scaled);
+				const ia = nodeIndex.get(nodeA);
+				const ib = nodeIndex.get(nodeB);
+				for (const [col, coeff] of scaled.terms.entries()) {
+					if (ia !== undefined) A[ia][col] = A[ia][col].add(coeff);
+					if (ib !== undefined) A[ib][col] = A[ib][col].sub(coeff);
+				}
+				if (!scaled.constant.isZero(1e-18)) {
+					if (ia !== undefined) b[ia] = b[ia].sub(scaled.constant);
+					if (ib !== undefined) b[ib] = b[ib].add(scaled.constant);
+				}
+				componentImpedance.set(comp.id, null);
+				break;
+			}
+			case 'ccvs': {
+				const ctrlBranchId = comp.controlRef!.controlBranchComponentId!;
+				const pol = comp.controlRef?.controlPolarity ?? 1;
+				const rm = parseDependentGain(comp, mode)!.scale(pol);
+				const auxIdx = voltageBranchAuxMap.get(comp.id)!;
+				const ctrlExpr = resolveBranchCurrentExpr(ctrlBranchId, new Set());
+				if (!ctrlExpr) {
+					diagnostics.push({
+						severity: 'error',
+						code: 'CIRCULAR_DEPENDENT_CONTROL',
+						message: `Dependent source ${comp.label} has a circular current-control dependency involving ${ctrlBranchId}.`,
+						componentIds: [comp.id, ctrlBranchId]
+					});
+					return makeInvalidSolution(doc, frequencyHz, acMagnitudeMode, diagnostics);
+				}
+				const row = numNodes + auxIdx;
+				const ia = nodeIndex.get(nodeA);
+				const ib = nodeIndex.get(nodeB);
+				const one = Complex.one();
+				if (ia !== undefined) {
+					A[ia][row] = A[ia][row].add(one);
+					A[row][ia] = A[row][ia].add(one);
+				}
+				if (ib !== undefined) {
+					A[ib][row] = A[ib][row].sub(one);
+					A[row][ib] = A[row][ib].sub(one);
+				}
+				for (const [col, coeff] of ctrlExpr.terms.entries()) {
+					A[row][col] = A[row][col].sub(rm.mul(coeff));
+				}
+				if (!ctrlExpr.constant.isZero(1e-18)) {
+					b[row] = b[row].add(rm.mul(ctrlExpr.constant));
+				}
 				componentImpedance.set(comp.id, null);
 				break;
 			}
@@ -315,9 +653,12 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 			} else {
 				current = voltage.div(passive.z);
 			}
-		} else if (comp.kind === 'voltage_source') {
+		} else if (comp.kind === 'voltage_source' || isDependentVoltageSource(comp.kind)) {
 			const auxIdx = voltageBranchAuxMap.get(comp.id)!;
 			current = x[numNodes + auxIdx];
+		} else if (comp.kind === 'vccs' || comp.kind === 'cccs') {
+			const expr = dependentCurrentExprs.get(comp.id)!;
+			current = evalLinearExpr(expr, x);
 		} else {
 			current = currentSourceValues.get(comp.id)!;
 		}
@@ -327,13 +668,23 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 		const reactivePower = complexPower.im;
 		const apparentPower = complexPower.abs();
 
+		// Sources report the power factor they deliver (S_supplied = -S_absorbed), which is the
+		// textbook "source power factor": a source feeding an R + jX load is lagging, not leading.
+		// Passives report the power factor of the power they absorb.
+		const isSource =
+			comp.kind === 'voltage_source' ||
+			comp.kind === 'current_source' ||
+			isDependentSourceKind(comp.kind);
+		const pfReal = isSource ? -realPower : realPower;
+		const pfReactive = isSource ? -reactivePower : reactivePower;
+
 		let powerFactor: number | null = null;
 		let powerFactorType: BranchResult['powerFactorType'] = undefined;
 		if (apparentPower > 1e-12) {
-			powerFactor = Math.max(-1, Math.min(1, realPower / apparentPower));
-			if (Math.abs(reactivePower) <= 1e-12 * apparentPower) {
+			powerFactor = Math.max(-1, Math.min(1, pfReal / apparentPower));
+			if (Math.abs(pfReactive) <= 1e-12 * apparentPower) {
 				powerFactorType = 'unity';
-			} else if (reactivePower > 0) {
+			} else if (pfReactive > 0) {
 				powerFactorType = 'lagging';
 			} else {
 				powerFactorType = 'leading';
@@ -403,6 +754,7 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 		mode,
 		frequencyHz,
 		acMagnitudeMode,
+		...(multiFrequencyHz ? { multiFrequencyHz } : {}),
 		diagnostics,
 		nodeVoltages,
 		branches,

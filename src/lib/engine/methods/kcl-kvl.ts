@@ -11,16 +11,24 @@
  */
 
 import { Complex } from '../complex';
-import { buildElectricalGraph, parseSourceValue } from '../graph';
+import {
+	buildElectricalGraph,
+	parseDependentGain,
+	parseSourceValue,
+	resolveDependentControlNodes
+} from '../graph';
 import { solveComplexLinearSystem } from '../linalg';
-import type {
-	CircuitComponent,
-	CircuitDocument,
-	MethodResult,
-	MnaSolution,
-	SolutionStep
+import {
+	isDependentSourceKind,
+	isDependentVoltageSource,
+	type CircuitComponent,
+	type CircuitDocument,
+	type MethodResult,
+	type MnaSolution,
+	type SolutionStep
 } from '../types';
 import {
+	formatDependentSourceExpr,
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
@@ -191,7 +199,11 @@ export function solveKclKvl(doc: CircuitDocument, mna: MnaSolution): MethodResul
 		row++;
 	}
 
+	const branchIndexByCompId = new Map<string, number>();
+	for (const br of branches) branchIndexByCompId.set(br.comp.id, br.index);
+
 	// (3) B branch constitutive equations
+	const dependentLatex: string[] = [];
 	for (const br of branches) {
 		const { comp, index } = br;
 		if (comp.kind === 'voltage_source') {
@@ -202,6 +214,36 @@ export function solveKclKvl(doc: CircuitDocument, mna: MnaSolution): MethodResul
 			const is = parseSourceValue(comp, mode)!;
 			A[row][index] = Complex.one();
 			rhs[row] = is;
+		} else if (isDependentSourceKind(comp.kind)) {
+			const pol = comp.controlRef?.controlPolarity ?? 1;
+			const gain = parseDependentGain(comp, mode)!.scale(pol);
+			const sub = latexSub(comp.label);
+			const exprTex = formatDependentSourceExpr(comp, doc, mode);
+			const lhsSym = isDependentVoltageSource(comp.kind) ? `V_{${sub}}` : `I_{${sub}}`;
+			dependentLatex.push(`${lhsSym} = ${exprTex}`);
+
+			if (comp.kind === 'vcvs' || comp.kind === 'vccs') {
+				const outCol = comp.kind === 'vcvs' ? B + index : index;
+				A[row][outCol] = A[row][outCol].add(Complex.one());
+				if (comp.controlRef?.controlComponentId) {
+					const ctrlIdx = branchIndexByCompId.get(comp.controlRef.controlComponentId)!;
+					A[row][B + ctrlIdx] = A[row][B + ctrlIdx].sub(gain);
+				} else {
+					const ctrl = resolveDependentControlNodes(comp, graph)!;
+					const path = findTreePath(ctrl.ctrlPos, ctrl.ctrlNeg);
+					for (const term of path) {
+						A[row][B + term.edgeIdx] = A[row][B + term.edgeIdx].sub(gain.scale(term.dir));
+					}
+				}
+				rhs[row] = Complex.zero();
+			} else {
+				// CCVS or CCCS
+				const outCol = comp.kind === 'ccvs' ? B + index : index;
+				const ctrlIdx = branchIndexByCompId.get(comp.controlRef!.controlBranchComponentId!)!;
+				A[row][outCol] = A[row][outCol].add(Complex.one());
+				A[row][ctrlIdx] = A[row][ctrlIdx].sub(gain);
+				rhs[row] = Complex.zero();
+			}
 		} else if (mode === 'dc' && comp.kind === 'capacitor') {
 			// Open circuit: I_C = 0
 			A[row][index] = Complex.one();
@@ -351,8 +393,18 @@ export function solveKclKvl(doc: CircuitDocument, mna: MnaSolution): MethodResul
 					? kvlLatex
 					: ['\\text{Tree-only circuit: no closed loops present.}']
 		},
+		...(dependentLatex.length > 0
+			? [
+					{
+						title: '4. Dependent Source Controlling Equations',
+						description:
+							'Include linear controlling laws for each dependent source alongside passive Ohm’s-law relations.',
+						latex: dependentLatex
+					}
+				]
+			: []),
 		{
-			title: '4. Solved Branch Voltages & Currents',
+			title: `${dependentLatex.length > 0 ? '5' : '4'}. Solved Branch Voltages & Currents`,
 			description: `Solved the ${dim}×${dim} KCL + KVL + element-law system and verified zero residuals at every node and loop.`,
 			latex: constitutiveLatex
 		}

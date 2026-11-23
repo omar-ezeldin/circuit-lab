@@ -302,6 +302,9 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 		expect(sol.branches['C1'].powerFactorType).toBe('leading');
 		expect(sol.branches['V1'].realPower).toBeCloseTo(-120, 9);
 		expect(sol.branches['V1'].reactivePower).toBeCloseTo(-160, 9);
+		// Source PF is the delivered PF: S_supplied = 120 + j160 VA -> 0.6 lagging (not leading)
+		expect(sol.branches['V1'].powerFactor).toBeCloseTo(0.6, 9);
+		expect(sol.branches['V1'].powerFactorType).toBe('lagging');
 		expect(sol.powerBalance.totalRealPower).toBeCloseTo(0, 9);
 		expect(sol.powerBalance.totalReactivePower).toBeCloseTo(0, 9);
 	});
@@ -746,5 +749,266 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 		const expectedAcVm = acSol.branches['R1'].voltage.add(acSol.branches['L1'].voltage);
 		expect(acSol.branches['VM_AC'].voltage.sub(expectedAcVm).abs()).toBeLessThan(1e-11);
 		expect(acSol.branches['VM_AC'].current.abs()).toBe(0);
+	});
+
+	it('20. DC Dependent Sources (VCVS, VCCS, CCVS, CCCS): exact hand-calculated solutions, control modes, polarity & power balance', () => {
+		// 20a. VCVS with controlComponentId (and verify equivalent controlNodePos/Neg & controlPolarity: -1)
+		// V1=16V (N1->0), R1=4k (N1->N2), R2=4k (N2->0), R3=2k (N2->N3), E1=2*V_R1 (N3->0)
+		// Hand solution: V_N1=16V, V_N2=10V, V_N3=12V, V_R1=6V, I_R1=1.5mA, I_R2=2.5mA, I_R3=-1mA
+		const vcvsDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'dc',
+			frequencyHz: 60,
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '16'),
+				comp('R1', 'resistor', 8, 4, 0, '4k'),
+				comp('R2', 'resistor', 12, 8, 90, '4k'),
+				comp('R3', 'resistor', 16, 4, 0, '2k'),
+				comp('E1', 'vcvs', 20, 8, 90, '2', {
+					controlRef: { controlComponentId: 'R1', controlPolarity: 1, controlVarName: 'v_x' }
+				}),
+				comp('G1', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [14, 4]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [18, 4], [20, 4], [20, 6]),
+				wire('w5', [4, 10], [20, 10])
+			]
+		};
+		const vcvsSol = solveMNA(vcvsDoc);
+		expect(vcvsSol.valid).toBe(true);
+		expect(vcvsSol.powerBalance.balanced).toBe(true);
+		expect(vcvsSol.branches['R1'].voltage.re).toBeCloseTo(6, 9);
+		expect(vcvsSol.branches['R2'].voltage.re).toBeCloseTo(10, 9);
+		expect(vcvsSol.branches['E1'].voltage.re).toBeCloseTo(12, 9);
+		expect(vcvsSol.branches['R3'].current.re).toBeCloseTo(-0.001, 9);
+
+		// Same circuit using explicit controlNodePos/controlNodeNeg + flipped controlPolarity: -1 with gain -2
+		const vcvsNodesDoc: CircuitDocument = {
+			...vcvsDoc,
+			components: vcvsDoc.components.map((c) =>
+				c.id === 'E1'
+					? {
+							...c,
+							value: '-2',
+							controlRef: {
+								controlNodePos: vcvsSol.branches['R1'].nodeA,
+								controlNodeNeg: vcvsSol.branches['R1'].nodeB,
+								controlPolarity: -1
+							}
+						}
+					: c
+			)
+		};
+		const vcvsNodesSol = solveMNA(vcvsNodesDoc);
+		expect(vcvsNodesSol.valid).toBe(true);
+		expect(vcvsNodesSol.powerBalance.balanced).toBe(true);
+		expect(vcvsNodesSol.branches['R2'].voltage.re).toBeCloseTo(10, 9);
+		expect(vcvsNodesSol.branches['E1'].voltage.re).toBeCloseTo(12, 9);
+
+		// 20b. VCCS (DC): V1=12V (N1->0), R1=4Ω (N1->N2), R2=6Ω (N2->0), G1=0.25*V_R1 (0->N2, rot=270 => pin0=0, pin1=N2)
+		// KCL at N2: (V2 - 12)/4 + V2/6 - 0.25*(12 - V2) = 0
+		// => (1/4 + 1/6 + 1/4) V2 = 3 + 3 = 6 => (2/3) V2 = 6 => V2 = 9 V, V_R1 = 3 V, I_G1 = 0.75 A
+		const vccsDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'dc',
+			frequencyHz: 60,
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '12'),
+				comp('R1', 'resistor', 8, 4, 0, '4'),
+				comp('R2', 'resistor', 12, 8, 90, '6'),
+				comp('Gdep', 'vccs', 18, 8, 270, '0.25', {
+					controlRef: { controlComponentId: 'R1', controlVarName: 'v_x' }
+				}),
+				comp('GND', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [18, 4], [18, 6]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [4, 10], [18, 10])
+			]
+		};
+		const vccsSol = solveMNA(vccsDoc);
+		expect(vccsSol.valid).toBe(true);
+		expect(vccsSol.powerBalance.balanced).toBe(true);
+		expect(vccsSol.branches['R2'].voltage.re).toBeCloseTo(9, 9);
+		expect(vccsSol.branches['R1'].voltage.re).toBeCloseTo(3, 9);
+		expect(vccsSol.branches['Gdep'].current.re).toBeCloseTo(0.75, 9);
+
+		// 20c. CCVS (DC): V1=12V (N1->0), R1=2Ω (N1->N2), R2=4Ω (N2->0), H1=2*I_R1 (N3->0), R3=4Ω (N2->N3)
+		// Hand: V_N3 = 2 * I_R1 = 2 * (12 - V2)/2 = 12 - V2.
+		// KCL at N2: (V2 - 12)/2 + V2/4 + (V2 - (12 - V2))/4 = 0
+		// *4: 2(V2 - 12) + V2 + (2V2 - 12) = 0 => 5 V2 = 36 => V2 = 7.2 V, I_R1 = 2.4 A, V_N3 = 4.8 V
+		const ccvsDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'dc',
+			frequencyHz: 60,
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '12'),
+				comp('R1', 'resistor', 8, 4, 0, '2'),
+				comp('R2', 'resistor', 12, 8, 90, '4'),
+				comp('R3', 'resistor', 16, 4, 0, '4'),
+				comp('H1', 'ccvs', 20, 8, 90, '2', {
+					controlRef: { controlBranchComponentId: 'R1', controlVarName: 'i_x' }
+				}),
+				comp('GND', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [14, 4]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [18, 4], [20, 4], [20, 6]),
+				wire('w5', [4, 10], [20, 10])
+			]
+		};
+		const ccvsSol = solveMNA(ccvsDoc);
+		expect(ccvsSol.valid).toBe(true);
+		expect(ccvsSol.powerBalance.balanced).toBe(true);
+		expect(ccvsSol.branches['R2'].voltage.re).toBeCloseTo(7.2, 9);
+		expect(ccvsSol.branches['R1'].current.re).toBeCloseTo(2.4, 9);
+		expect(ccvsSol.branches['H1'].voltage.re).toBeCloseTo(4.8, 9);
+
+		// 20d. CCCS (DC): V1=12V (N1->0), R1=4Ω (N1->N2), R2=6Ω (N2->0), F1=2*I_R1 (0->N2)
+		// KCL at N2: (V2 - 12)/4 + V2/6 - 2*(12 - V2)/4 = 0
+		// => (1/4 + 1/6 + 2/4) V2 = 3 + 6 = 9 => (11/12) V2 = 9 => V2 = 108/11 V
+		// I_R1 = (12 - 108/11)/4 = (24/11)/4 = 6/11 A, I_F1 = 12/11 A
+		const cccsDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'dc',
+			frequencyHz: 60,
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '12'),
+				comp('R1', 'resistor', 8, 4, 0, '4'),
+				comp('R2', 'resistor', 12, 8, 90, '6'),
+				comp('F1', 'cccs', 18, 8, 270, '2', {
+					controlRef: { controlBranchComponentId: 'R1', controlVarName: 'i_x' }
+				}),
+				comp('GND', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [18, 4], [18, 6]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [4, 10], [18, 10])
+			]
+		};
+		const cccsSol = solveMNA(cccsDoc);
+		expect(cccsSol.valid).toBe(true);
+		expect(cccsSol.powerBalance.balanced).toBe(true);
+		expect(cccsSol.branches['R2'].voltage.re).toBeCloseTo(108 / 11, 9);
+		expect(cccsSol.branches['R1'].current.re).toBeCloseTo(6 / 11, 9);
+		expect(cccsSol.branches['F1'].current.re).toBeCloseTo(12 / 11, 9);
+	});
+
+	it('21. AC Dependent Sources (VCVS, VCCS, CCVS, CCCS) with complex impedances & balanced complex power', () => {
+		// AC VCVS + reactive load: V1=10∠0° V, R1=2 Ω, C1=-j2 Ω (N2->0), L1=j2 Ω (N2->N3), E1=2*V_R1 (N3->0)
+		// Hand: V_N3 = 2*(10 - V2) = 20 - 2*V2
+		// KCL at N2: (V2 - 10)/2 + V2/(-j2) + (V2 - (20 - 2*V2))/(j2) = 0
+		// *2: (V2 - 10) + j*V2 - j*(3*V2 - 20) = 0
+		// => (1 - j2)*V2 = 10 - j20 = 10*(1 - j2) => V2 = 10 V!
+		// Wait: V_R1 = 10 - 10 = 0 V! Let's make E1 = (1+j1)*V_R1 so V_R1 != 0:
+		// E1 = (1+j1)*(10 - V2) => KCL*2: (V2-10) + j*V2 + (-j)*(V2 - (1+j1)*(10-V2)) = 0
+		// => (V2 - 10) + j*(1+j1)*(10 - V2) = 0 => (V2 - 10)*(1 - (-1+j1)) = 0 -> still 10 unless C1 != -L1!
+		// Use R1=2 Ω, R2=4 Ω (N2->0), L1=j2 Ω (N2->N3), E1=2*V_R1 (N3->0):
+		// KCL at N2: (V2 - 10)/2 + V2/4 + (V2 - 2*(10 - V2))/(j2) = 0
+		// *4: 2(V2 - 10) + V2 - j2*(3*V2 - 20) = 0 => (3 - j6)*V2 = 20 - j40
+		// => V2 = (20 - j40)/(3 - j6) = 20/3 V! Let's use L1=j4 Ω instead:
+		// *4: 2(V2 - 10) + V2 - j*(3*V2 - 20) = 0 => (3 - j3)*V2 = 20 - j20 => V2 = 20/3 V (still real!).
+		// Use R1=2 Ω, C1=-j4 Ω (N2->0), R3=4 Ω (N2->N3), E1=2*V_R1 (N3->0):
+		// KCL*4: 2(V2 - 10) + j*V2 + (3*V2 - 20) = 0 => (5 + j1)*V2 = 40 => V2 = 40/(5 + j1)
+		const acVcvsDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'ac',
+			frequencyHz: 60,
+			acMagnitudeMode: 'rms',
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '10∠0°'),
+				comp('R1', 'resistor', 8, 4, 0, '2'),
+				comp('C1', 'capacitor', 12, 8, 90, '-j4', { valueMode: 'impedance', unit: 'Ω' }),
+				comp('R3', 'resistor', 16, 4, 0, '4'),
+				comp('E1', 'vcvs', 20, 8, 90, '2', {
+					controlRef: { controlComponentId: 'R1' }
+				}),
+				comp('GND', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [14, 4]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [18, 4], [20, 4], [20, 6]),
+				wire('w5', [4, 10], [20, 10])
+			]
+		};
+		const acVcvsSol = solveMNA(acVcvsDoc);
+		expect(acVcvsSol.valid).toBe(true);
+		expect(acVcvsSol.powerBalance.balanced).toBe(true);
+		const expectedV2 = Complex.from(40, 0).div(Complex.from(5, 1));
+		expect(acVcvsSol.branches['C1'].voltage.sub(expectedV2).abs()).toBeLessThan(1e-11);
+		expect(
+			acVcvsSol.branches['E1'].voltage
+				.sub(Complex.from(10, 0).sub(expectedV2).scale(2))
+				.abs()
+		).toBeLessThan(1e-11);
+
+		// AC CCCS with complex gain: V1=10∠0° V, R1=2 Ω, L1=j2 Ω (N2->0), F1=(1+j1)*I_R1 (0->N2)
+		// KCL at N2: (V2 - 10)/2 + V2/(j2) - (1+j1)*(10 - V2)/2 = 0
+		// *2: (V2 - 10) - j*V2 + (1+j1)*(V2 - 10) = 0
+		// => (2 + j0)*V2 = (2 + j1)*10 => V2 = 10 + j5 V!
+		const acCccsDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'ac',
+			frequencyHz: 60,
+			acMagnitudeMode: 'rms',
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '10∠0°'),
+				comp('R1', 'resistor', 8, 4, 0, '2'),
+				comp('L1', 'inductor', 12, 8, 90, 'j2', { valueMode: 'impedance', unit: 'Ω' }),
+				comp('F1', 'cccs', 18, 8, 270, '1+j1', {
+					controlRef: { controlBranchComponentId: 'R1' }
+				}),
+				comp('GND', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [18, 4], [18, 6]),
+				wire('w3', [12, 4], [12, 6]),
+				wire('w4', [4, 10], [18, 10])
+			]
+		};
+		const acCccsSol = solveMNA(acCccsDoc);
+		expect(acCccsSol.valid).toBe(true);
+		expect(acCccsSol.powerBalance.balanced).toBe(true);
+		expect(acCccsSol.branches['L1'].voltage.sub(Complex.from(10, 5)).abs()).toBeLessThan(1e-11);
+	});
+
+	it('22. Dependent source validation emits actionable INVALID_DEPENDENT_CONTROL diagnostics', () => {
+		const brokenDoc: CircuitDocument = {
+			schemaVersion: 1,
+			mode: 'dc',
+			frequencyHz: 60,
+			components: [
+				comp('V1', 'voltage_source', 4, 8, 90, '12'),
+				comp('R1', 'resistor', 8, 4, 0, '4k'),
+				comp('E1', 'vcvs', 12, 8, 90, '2', {
+					controlRef: { controlComponentId: 'DELETED_R99' }
+				}),
+				comp('GND', 'ground', 4, 10, 0, '0')
+			],
+			wires: [
+				wire('w1', [4, 6], [4, 4], [6, 4]),
+				wire('w2', [10, 4], [12, 4], [12, 6]),
+				wire('w3', [4, 10], [12, 10])
+			]
+		};
+		const sol = solveMNA(brokenDoc);
+		expect(sol.valid).toBe(false);
+		expect(
+			sol.diagnostics.some(
+				(d) => d.severity === 'error' && d.code === 'INVALID_DEPENDENT_CONTROL'
+			)
+		).toBe(true);
 	});
 });

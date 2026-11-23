@@ -10,24 +10,27 @@ import {
 import {
 	buildElectricalGraph,
 	isImpedanceSpecified,
+	parseDependentGain,
 	parseDirectImpedance,
 	parsePassiveValue,
 	parseSourceValue
 } from './graph';
-import type {
-	AcMagnitudeMode,
-	AnalysisMode,
-	CircuitComponent,
-	CircuitConstraint,
-	CircuitDocument,
-	CircuitWire,
-	ComponentKind,
-	ConstraintKind,
-	PassiveValueMode,
-	Rotation,
-	UnitSystemId,
-	UnknownProblemSpec,
-	UnknownTerm
+import {
+	isDependentSourceKind,
+	type AcMagnitudeMode,
+	type AnalysisMode,
+	type CircuitComponent,
+	type CircuitConstraint,
+	type CircuitDocument,
+	type CircuitWire,
+	type ComponentKind,
+	type ConstraintKind,
+	type DependentControlRef,
+	type PassiveValueMode,
+	type Rotation,
+	type UnitSystemId,
+	type UnknownProblemSpec,
+	type UnknownTerm
 } from './types';
 import { parseComplexValue, parseEngineeringNumber } from './units';
 import { parseAlgebraicUnknownValue } from './unknown-solver';
@@ -46,7 +49,7 @@ Schema:
   "elements": [
     {
       "id": "R1",
-      "kind": "resistor" | "capacitor" | "inductor" | "voltage_source" | "current_source",
+      "kind": "resistor" | "capacitor" | "inductor" | "voltage_source" | "current_source" | "vcvs" | "vccs" | "ccvs" | "cccs",
       "label": "R1",
       "from": "N1",
       "to": "N2",
@@ -56,6 +59,15 @@ Schema:
       "unit": "Ω",
       "valueMode": "physical" | "impedance",
       "phaseDeg": 0,
+      "controlRef": {
+        "controlComponentId": "R1",
+        "controlNodePos": "N1",
+        "controlNodeNeg": "N2",
+        "controlBranchComponentId": "R1",
+        "controlPolarity": 1,
+        "controlVarName": "v_x",
+        "gain": "2"
+      },
       "unknown": false,
       "unknownSymbol": "V",
       "unknownMultiplier": 1
@@ -78,7 +90,11 @@ Schema:
 }
 
 Rules:
-1. Allowed "kind" values ONLY: "resistor", "capacitor", "inductor", "voltage_source", "current_source".
+1. Allowed "kind" values ONLY: "resistor", "capacitor", "inductor", "voltage_source", "current_source", "vcvs", "vccs", "ccvs", "cccs".
+   - For dependent sources ("vcvs", "vccs", "ccvs", "cccs"), put the scalar/complex gain in "value" (e.g. "2", "4k", "2m") AND include "controlRef":
+     - VCVS/VCCS: set "controlComponentId" to the controlling element's id/label (e.g. "R1") OR set "controlNodePos" and "controlNodeNeg".
+     - CCVS/CCCS: set "controlBranchComponentId" to the controlling branch's id/label (e.g. "R1").
+     - Optional "controlPolarity": 1 (default) or -1 (flipped sign), and optional "controlVarName" (e.g. "v_x", "i_x").
 2. Node naming:
    - Use "0" for the ground / reference node (or bottom return rail if no ground symbol is drawn).
    - Name all other distinct electrical nodes "N1", "N2", "N3", ...
@@ -171,6 +187,10 @@ const ALLOWED_KINDS = new Set<ComponentKind>([
 	'inductor',
 	'voltage_source',
 	'current_source',
+	'vcvs',
+	'vccs',
+	'ccvs',
+	'cccs',
 	'ground',
 	'terminal',
 	'voltmeter'
@@ -193,6 +213,38 @@ const VALID_CONSTRAINT_KINDS = new Set<ConstraintKind>([
 const PASSIVE_KINDS = new Set<ComponentKind>(['resistor', 'capacitor', 'inductor']);
 const SOURCE_KINDS = new Set<ComponentKind>(['voltage_source', 'current_source']);
 const VALID_ROTATIONS = new Set<number>([0, 90, 180, 270]);
+
+function parseControlRefObject(raw: unknown): DependentControlRef | undefined {
+	if (!isPlainObject(raw)) return undefined;
+	const out: DependentControlRef = {};
+	if (typeof raw.controlComponentId === 'string' && raw.controlComponentId.trim() !== '') {
+		out.controlComponentId = raw.controlComponentId.trim();
+	}
+	if (typeof raw.controlNodePos === 'string' && raw.controlNodePos.trim() !== '') {
+		out.controlNodePos = raw.controlNodePos.trim();
+	}
+	if (typeof raw.controlNodeNeg === 'string' && raw.controlNodeNeg.trim() !== '') {
+		out.controlNodeNeg = raw.controlNodeNeg.trim();
+	}
+	if (
+		typeof raw.controlBranchComponentId === 'string' &&
+		raw.controlBranchComponentId.trim() !== ''
+	) {
+		out.controlBranchComponentId = raw.controlBranchComponentId.trim();
+	}
+	if (raw.controlPolarity === 1 || raw.controlPolarity === -1) {
+		out.controlPolarity = raw.controlPolarity;
+	}
+	if (typeof raw.controlVarName === 'string' && raw.controlVarName.trim() !== '') {
+		out.controlVarName = raw.controlVarName.trim();
+	}
+	if (typeof raw.gain === 'number' && Number.isFinite(raw.gain)) {
+		out.gain = raw.gain;
+	} else if (typeof raw.gain === 'string' && raw.gain.trim() !== '') {
+		out.gain = raw.gain.trim();
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
 
 function isPlainObject(val: unknown): val is Record<string, unknown> {
 	return typeof val === 'object' && val !== null && !Array.isArray(val);
@@ -268,6 +320,7 @@ export function exportCircuitJson(doc: CircuitDocument): string {
 		};
 		if (c.numericValue !== undefined) out.numericValue = c.numericValue;
 		if (c.phaseDeg !== undefined) out.phaseDeg = c.phaseDeg;
+		if (c.frequencyHz !== undefined) out.frequencyHz = c.frequencyHz;
 		if (c.unit !== undefined) out.unit = c.unit;
 		if (c.valueMode !== undefined) out.valueMode = c.valueMode;
 		if (c.terminalName !== undefined) out.terminalName = c.terminalName;
@@ -596,6 +649,15 @@ function parseCircuitDocumentFormat(obj: Record<string, unknown>): CircuitImport
 		if (typeof raw.phaseDeg === 'number' && Number.isFinite(raw.phaseDeg)) {
 			candidate.phaseDeg = raw.phaseDeg;
 		}
+		// Per-source frequency (multi-frequency AC superposition); 0 Hz = DC term
+		if (
+			(candidate.kind === 'voltage_source' || candidate.kind === 'current_source') &&
+			typeof raw.frequencyHz === 'number' &&
+			Number.isFinite(raw.frequencyHz) &&
+			raw.frequencyHz >= 0
+		) {
+			candidate.frequencyHz = raw.frequencyHz;
+		}
 		if (typeof raw.unit === 'string') candidate.unit = raw.unit;
 		if (raw.valueMode !== undefined) {
 			if (raw.valueMode === 'physical' || raw.valueMode === 'impedance') {
@@ -607,8 +669,9 @@ function parseCircuitDocumentFormat(obj: Record<string, unknown>): CircuitImport
 			}
 		}
 		if (typeof raw.terminalName === 'string') candidate.terminalName = raw.terminalName;
-		if (isPlainObject(raw.controlRef)) {
-			candidate.controlRef = raw.controlRef as CircuitComponent['controlRef'];
+		const parsedControlRef = parseControlRefObject(raw.controlRef);
+		if (parsedControlRef) {
+			candidate.controlRef = parsedControlRef;
 		}
 
 		if (PASSIVE_KINDS.has(kind) && valueStr !== '') {
@@ -627,6 +690,12 @@ function parseCircuitDocumentFormat(obj: Record<string, unknown>): CircuitImport
 			if (parseSourceValue(candidate, mode) === null) {
 				errors.push(
 					`${prefix} (${candidate.label}): invalid ${mode.toUpperCase()} source value "${valueStr}".`
+				);
+			}
+		} else if (isDependentSourceKind(kind) && valueStr !== '') {
+			if (parseDependentGain(candidate, mode) === null) {
+				errors.push(
+					`${prefix} (${candidate.label}): invalid ${mode.toUpperCase()} dependent gain "${valueStr}".`
 				);
 			}
 		}
@@ -804,7 +873,7 @@ function parseAiNetlistFormat(obj: Record<string, unknown>): CircuitImportResult
 
 		if (typeof raw.kind !== 'string' || !ALLOWED_KINDS.has(raw.kind as ComponentKind)) {
 			errors.push(
-				`${prefix} (${elId ?? '?'}): invalid kind "${String(raw.kind)}". Allowed: resistor, capacitor, inductor, voltage_source, current_source, ground, terminal, voltmeter.`
+				`${prefix} (${elId ?? '?'}): invalid kind "${String(raw.kind)}". Allowed: resistor, capacitor, inductor, voltage_source, current_source, vcvs, vccs, ccvs, cccs, ground, terminal, voltmeter.`
 			);
 			return;
 		}
@@ -1076,7 +1145,7 @@ function parseAiNetlistFormat(obj: Record<string, unknown>): CircuitImportResult
 						);
 					}
 				}
-			} else if (SOURCE_KINDS.has(kind) && valueStr !== '') {
+			} else if ((SOURCE_KINDS.has(kind) || isDependentSourceKind(kind)) && valueStr !== '') {
 				const parsed = parseComplexValue(valueStr);
 				if (!parsed || !parsed.isFinite()) {
 					errors.push(
@@ -1108,6 +1177,8 @@ function parseAiNetlistFormat(obj: Record<string, unknown>): CircuitImportResult
 		if (typeof raw.terminalName === 'string') el.terminalName = raw.terminalName;
 		if (fromPos) el.fromPos = fromPos;
 		if (toPos) el.toPos = toPos;
+		const parsedControlRef = parseControlRefObject(raw.controlRef);
+		if (parsedControlRef) el.controlRef = parsedControlRef;
 		if (isMarkedUnknown) {
 			el.unknown = true;
 			if (unknownSymbol) el.unknownSymbol = unknownSymbol;
@@ -1191,15 +1262,37 @@ function parseAiNetlistFormat(obj: Record<string, unknown>): CircuitImportResult
 	const { document, layoutMode, nodeIdMap } = layoutResult;
 	warnings.push(...layoutResult.warnings);
 
+	const resolveCompId = (ref: string): string | null => {
+		const byId = document.components.find((c) => c.id === ref);
+		if (byId) return byId.id;
+		const byLabel = document.components.find((c) => c.label === ref);
+		if (byLabel) return byLabel.id;
+		return null;
+	};
+
+	// Resolve dependent source controlRef component/node references against laid-out IDs
+	for (const comp of document.components) {
+		if (!isDependentSourceKind(comp.kind) || !comp.controlRef) continue;
+		const ref = { ...comp.controlRef };
+		if (ref.controlComponentId) {
+			const resolved = resolveCompId(ref.controlComponentId);
+			if (resolved) ref.controlComponentId = resolved;
+		}
+		if (ref.controlBranchComponentId) {
+			const resolved = resolveCompId(ref.controlBranchComponentId);
+			if (resolved) ref.controlBranchComponentId = resolved;
+		}
+		if (ref.controlNodePos !== undefined) {
+			ref.controlNodePos = nodeIdMap[ref.controlNodePos] ?? ref.controlNodePos;
+		}
+		if (ref.controlNodeNeg !== undefined) {
+			ref.controlNodeNeg = nodeIdMap[ref.controlNodeNeg] ?? ref.controlNodeNeg;
+		}
+		comp.controlRef = ref;
+	}
+
 	// Resolve and attach `unknownProblem` using actual laid-out component IDs and graph node IDs
 	if (rawUnknownProblem) {
-		const resolveCompId = (ref: string): string | null => {
-			const byId = document.components.find((c) => c.id === ref);
-			if (byId) return byId.id;
-			const byLabel = document.components.find((c) => c.label === ref);
-			if (byLabel) return byLabel.id;
-			return null;
-		};
 
 		let resolvedCompId = resolveCompId(rawUnknownProblem.componentId);
 		if (!resolvedCompId && firstUnknownElementHint !== null) {

@@ -6,6 +6,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import type { Snippet } from 'svelte';
 	import { IS_STAGING } from '$lib/env';
+	import AnalyticsConsent from '$lib/components/consent/AnalyticsConsent.svelte';
 
 	let { children }: { children: Snippet } = $props();
 </script>
@@ -18,3 +19,4 @@
 
 <ModeWatcher defaultMode="light" />
 {@render children()}
+<AnalyticsConsent />

@@ -18,20 +18,23 @@
 	const isSheet = $derived(variant === 'sheet');
 
 	let searchQuery = $state('');
-	let openGroups = $state<string[]>(['sources', 'passives', 'connections']);
+	let openGroups = $state<string[]>(['sources', 'dependent', 'passives', 'connections']);
 
 	const filteredItems = $derived.by(() => {
 		const q = searchQuery.trim().toLowerCase();
 		if (!q) return PALETTE_ITEMS;
 		return PALETTE_ITEMS.filter(
 			(item) =>
+				item.label.toLowerCase().includes(q) ||
 				item.name.toLowerCase().includes(q) ||
+				item.description.toLowerCase().includes(q) ||
 				item.shortcut.toLowerCase().includes(q) ||
 				item.category.toLowerCase().includes(q)
 		);
 	});
 
 	const sourcesList = $derived(filteredItems.filter((i) => i.category === 'sources'));
+	const dependentList = $derived(filteredItems.filter((i) => i.category === 'dependent'));
 	const passivesList = $derived(filteredItems.filter((i) => i.category === 'passives'));
 	const connectionsList = $derived(filteredItems.filter((i) => i.category === 'connections'));
 
@@ -231,6 +234,49 @@
 										Soon
 									</span>
 								{:else if !isSheet}
+									<span class="font-engineering shrink-0 text-[10px] text-muted-foreground/80">
+										{item.shortcut}
+									</span>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				</AccordionItem>
+			{/if}
+
+			{#if dependentList.length > 0}
+				<AccordionItem
+					value="dependent"
+					title="Dependent Sources"
+					triggerClass={accordionTriggerClass}
+					contentClass={accordionContentClass}
+				>
+					<div class="flex flex-col gap-0.5">
+						{#each dependentList as item (item.id)}
+							{@const active = isItemActive(item)}
+							<button
+								type="button"
+								title={item.description}
+								onclick={() => handleSelectPaletteItem(item)}
+								class={cn(
+									'flex w-full cursor-pointer items-center justify-between rounded-[4px] border text-left transition-colors duration-150',
+									isSheet ? 'min-h-11 gap-2 px-3 py-2 text-sm' : 'gap-1.5 px-2 py-1.5 text-xs',
+									'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+									active
+										? 'border-primary/45 bg-card font-medium text-foreground'
+										: 'border-transparent text-foreground/90 hover:bg-accent/70 hover:text-foreground'
+								)}
+							>
+								<span class={cn('flex min-w-0 items-center', isSheet ? 'gap-2.5' : 'gap-1.5')}>
+									<CircuitSymbol
+										kind={item.kind}
+										variant="icon"
+										size={isSheet ? 22 : 18}
+										class={cn('shrink-0', active ? 'text-primary' : 'text-foreground')}
+									/>
+									<span class="truncate">{item.name}</span>
+								</span>
+								{#if !isSheet && item.shortcut}
 									<span class="font-engineering shrink-0 text-[10px] text-muted-foreground/80">
 										{item.shortcut}
 									</span>

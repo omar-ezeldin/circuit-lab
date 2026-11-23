@@ -11,6 +11,8 @@ import {
 	buildElectricalGraph,
 	getPinPositions,
 	getUnknownTerms,
+	isDependentSourceKind,
+	isVoltageControlledSource,
 	parseEngineeringNumber,
 	solveCircuit,
 	type AnalysisMode,
@@ -19,11 +21,13 @@ import {
 	type CircuitDocument,
 	type CircuitWire,
 	type ComponentKind,
+	type DependentControlRef,
 	type ElectricalGraph,
 	type FullSolveResult,
 	type GridPoint,
 	type MethodId,
 	type PassiveValueMode,
+	type PinAnchor,
 	type Rotation,
 	type TheveninTarget,
 	type UnknownProblemSpec
@@ -45,6 +49,7 @@ export interface AddComponentOptions {
 	unit?: string;
 	valueMode?: PassiveValueMode;
 	terminalName?: string;
+	controlRef?: DependentControlRef;
 }
 
 export interface HistorySnapshot {
@@ -60,6 +65,10 @@ const DEFAULT_UNITS: Record<ComponentKind, string | undefined> = {
 	inductor: 'H',
 	voltage_source: 'V',
 	current_source: 'A',
+	vcvs: 'V/V',
+	vccs: 'S',
+	ccvs: 'Ω',
+	cccs: 'A/A',
 	ground: undefined,
 	terminal: undefined,
 	voltmeter: undefined
@@ -71,6 +80,10 @@ const LABEL_PREFIXES: Record<ComponentKind, string> = {
 	inductor: 'L',
 	voltage_source: 'V',
 	current_source: 'I',
+	vcvs: 'E',
+	vccs: 'G',
+	ccvs: 'H',
+	cccs: 'F',
 	ground: 'GND',
 	terminal: 'T',
 	voltmeter: 'VM'
@@ -103,6 +116,90 @@ function cloneDocument(doc: CircuitDocument): CircuitDocument {
 				}
 			: undefined
 	};
+}
+
+/**
+ * Node IDs (N1, N2, ...) are renumbered by position whenever the layout changes, so anything
+ * that points at a node is stored with a pin anchor and re-resolved against the current graph.
+ */
+function anchorForNode(
+	graph: ElectricalGraph,
+	nodeId: string,
+	excludeComponentId?: string
+): PinAnchor | undefined {
+	const pin = graph.nodes[nodeId]?.componentPins.find((p) => p.componentId !== excludeComponentId);
+	return pin ? { componentId: pin.componentId, pinIndex: pin.pinIndex } : undefined;
+}
+
+function nodeForAnchor(graph: ElectricalGraph, anchor?: PinAnchor): string | undefined {
+	if (!anchor) return undefined;
+	return graph.componentNodes[anchor.componentId]?.[anchor.pinIndex];
+}
+
+function resolveDocumentAnchors(doc: CircuitDocument, graph: ElectricalGraph): CircuitDocument {
+	let out = doc;
+
+	// Dependent sources controlled by a node pair
+	let componentsChanged = false;
+	const components = doc.components.map((comp) => {
+		const ref = comp.controlRef;
+		if (!ref || (!ref.controlNodePosPin && !ref.controlNodeNegPin)) return comp;
+		const pos = nodeForAnchor(graph, ref.controlNodePosPin) ?? ref.controlNodePos;
+		const neg = nodeForAnchor(graph, ref.controlNodeNegPin) ?? ref.controlNodeNeg;
+		if (pos === ref.controlNodePos && neg === ref.controlNodeNeg) return comp;
+		componentsChanged = true;
+		return { ...comp, controlRef: { ...ref, controlNodePos: pos, controlNodeNeg: neg } };
+	});
+	if (componentsChanged) out = { ...out, components };
+
+	// Unknown-value constraint on a node voltage
+	const up = out.unknownProblem;
+	const c = up?.constraint;
+	if (up && c && c.kind === 'node_voltage' && c.targetPin) {
+		const nodeId = nodeForAnchor(graph, c.targetPin);
+		if (nodeId && nodeId !== c.targetId) {
+			out = { ...out, unknownProblem: { ...up, constraint: { ...c, targetId: nodeId } } };
+		}
+	}
+	return out;
+}
+
+/** Attach (or refresh) pin anchors for a dependent source's controlling node pair. */
+function anchorControlNodes(ref: DependentControlRef, graph: ElectricalGraph): DependentControlRef {
+	const next: DependentControlRef = { ...ref };
+	delete next.controlNodePosPin;
+	delete next.controlNodeNegPin;
+	if (next.controlNodePos) {
+		const pin = anchorForNode(graph, next.controlNodePos);
+		if (pin) next.controlNodePosPin = pin;
+	}
+	if (next.controlNodeNeg) {
+		const pin = anchorForNode(graph, next.controlNodeNeg);
+		if (pin) next.controlNodeNegPin = pin;
+	}
+	return next;
+}
+
+function resolveTheveninAnchors(
+	target: TheveninTarget | undefined,
+	graph: ElectricalGraph
+): TheveninTarget | undefined {
+	if (!target || target.kind !== 'terminals') return target;
+	const nodeA = nodeForAnchor(graph, target.pinA) ?? target.nodeA;
+	const nodeB = nodeForAnchor(graph, target.pinB) ?? target.nodeB;
+	if (nodeA === target.nodeA && nodeB === target.nodeB) return target;
+	return { ...target, nodeA, nodeB };
+}
+
+/** Re-anchor a pin that belongs to a component about to be deleted onto another pin of its node. */
+function reanchorAwayFrom(
+	graph: ElectricalGraph,
+	anchor: PinAnchor | undefined,
+	deletedId: string
+): PinAnchor | undefined {
+	if (!anchor || anchor.componentId !== deletedId) return anchor;
+	const nodeId = nodeForAnchor(graph, anchor);
+	return nodeId ? anchorForNode(graph, nodeId, deletedId) : undefined;
 }
 
 function cloneTheveninTarget(target?: TheveninTarget): TheveninTarget | undefined {
@@ -196,6 +293,14 @@ function getDefaultValue(kind: ComponentKind, sourceMode: SourceMode): string {
 			return sourceMode === 'ac' ? '10∠0°' : '10';
 		case 'current_source':
 			return sourceMode === 'ac' ? '10m∠0°' : '10m';
+		case 'vcvs':
+			return '2';
+		case 'vccs':
+			return '1m';
+		case 'ccvs':
+			return '1k';
+		case 'cccs':
+			return '2';
 		case 'ground':
 		case 'terminal':
 		case 'voltmeter':
@@ -225,11 +330,18 @@ class CircuitStore {
 	private _redoStack = $state<HistorySnapshot[]>([]);
 
 	private _graph = $derived<ElectricalGraph>(buildElectricalGraph(this._document));
+	/** Document / Thévenin target with node references re-resolved from their pin anchors. */
+	private _resolvedDocument = $derived<CircuitDocument>(
+		resolveDocumentAnchors(this._document, this._graph)
+	);
+	private _resolvedTheveninTarget = $derived<TheveninTarget | undefined>(
+		resolveTheveninAnchors(this._theveninTarget, this._graph)
+	);
 	private _solution = $derived<FullSolveResult>(
-		solveCircuit(this._document, {
+		solveCircuit(this._resolvedDocument, {
 			frequencyHz: this._document.frequencyHz,
 			acMagnitudeMode: settings.acMagnitudeMode,
-			theveninTarget: this._theveninTarget
+			theveninTarget: this._resolvedTheveninTarget
 		})
 	);
 	private _selectedComponent = $derived<CircuitComponent | null>(
@@ -244,7 +356,7 @@ class CircuitStore {
 	);
 
 	get document(): CircuitDocument {
-		return this._document;
+		return this._resolvedDocument;
 	}
 
 	get documentLoadSeq(): number {
@@ -305,7 +417,7 @@ class CircuitStore {
 	}
 
 	get theveninTarget(): TheveninTarget | undefined {
-		return this._theveninTarget;
+		return this._resolvedTheveninTarget;
 	}
 
 	get activeMethod(): MethodId {
@@ -455,6 +567,14 @@ class CircuitStore {
 		const resolvedUnit =
 			opts?.unit ?? (valueMode === 'impedance' ? 'Ω' : DEFAULT_UNITS[kind]);
 
+		const resolvedControlRef: DependentControlRef | undefined = isDependentSourceKind(kind)
+			? {
+					controlPolarity: 1,
+					controlVarName: isVoltageControlledSource(kind) ? 'v_x' : 'i_x',
+					...(opts?.controlRef ?? {})
+				}
+			: opts?.controlRef;
+
 		const component: CircuitComponent = {
 			id,
 			kind,
@@ -469,7 +589,8 @@ class CircuitStore {
 			unit: resolvedUnit,
 			...(valueMode !== undefined ? { valueMode } : {}),
 			terminalName:
-				kind === 'terminal' ? (opts?.terminalName ?? generated.terminalName ?? 'A') : undefined
+				kind === 'terminal' ? (opts?.terminalName ?? generated.terminalName ?? 'A') : undefined,
+			...(resolvedControlRef !== undefined ? { controlRef: resolvedControlRef } : {})
 		};
 
 		this._document = {
@@ -546,12 +667,29 @@ class CircuitStore {
 		};
 	}
 
+	/**
+	 * True if another component already uses this label (or one that renders the same in the
+	 * steps: LaTeX subscripts keep only [A-Za-z0-9_], so "R-1" and "R1" both show as R_1).
+	 */
+	isLabelTaken(label: string, exceptId?: string): boolean {
+		const key = label.replace(/[^a-zA-Z0-9_]/g, '');
+		return this._document.components.some(
+			(c) =>
+				c.id !== exceptId &&
+				(c.label.replace(/[^a-zA-Z0-9_]/g, '') === key || c.id === label)
+		);
+	}
+
+	/** Returns false (and changes nothing) if the patch would duplicate another label. */
 	updateComponent(
 		id: string,
 		patch: Partial<Omit<CircuitComponent, 'id' | 'kind'>>
-	): void {
+	): boolean {
 		const target = this._document.components.find((c) => c.id === id);
-		if (!target) return;
+		if (!target) return false;
+		if (patch.label !== undefined && patch.label !== target.label && this.isLabelTaken(patch.label, id)) {
+			return false;
+		}
 
 		this.recordSnapshot();
 
@@ -568,15 +706,65 @@ class CircuitStore {
 
 		this._document = {
 			...this._document,
+			components: this._document.components.map((c) => {
+				if (c.id !== id) return c;
+				const nextControlRef =
+					patch.controlRef !== undefined
+						? patch.controlRef
+						: isDependentSourceKind(c.kind) && patch.value !== undefined && c.controlRef
+							? { ...c.controlRef, gain: nextValue }
+							: c.controlRef;
+				return {
+					...c,
+					...patch,
+					value: nextValue,
+					numericValue: nextNumeric,
+					...(nextControlRef !== undefined ? { controlRef: nextControlRef } : {})
+				};
+			})
+		};
+		return true;
+	}
+
+	updateComponentControlRef(id: string, patch: Partial<DependentControlRef>): void {
+		const target = this._document.components.find((c) => c.id === id);
+		if (!target || !isDependentSourceKind(target.kind)) return;
+
+		this.recordSnapshot();
+
+		// Start from the resolved ref: stored node names may be stale after a renumbering
+		const currentRef =
+			this._resolvedDocument.components.find((c) => c.id === id)?.controlRef ?? target.controlRef;
+		const merged: DependentControlRef = {
+			...(currentRef ?? {}),
+			...patch
+		};
+
+		if (
+			'controlComponentId' in patch &&
+			typeof patch.controlComponentId === 'string' &&
+			patch.controlComponentId.trim() !== ''
+		) {
+			delete merged.controlNodePos;
+			delete merged.controlNodeNeg;
+		} else if (
+			('controlNodePos' in patch && patch.controlNodePos !== undefined && patch.controlNodePos !== '') ||
+			('controlNodeNeg' in patch && patch.controlNodeNeg !== undefined && patch.controlNodeNeg !== '')
+		) {
+			delete merged.controlComponentId;
+		}
+
+		// Strip explicitly cleared empty strings so serialization stays canonical
+		if (merged.controlComponentId === '') delete merged.controlComponentId;
+		if (merged.controlNodePos === '') delete merged.controlNodePos;
+		if (merged.controlNodeNeg === '') delete merged.controlNodeNeg;
+		if (merged.controlBranchComponentId === '') delete merged.controlBranchComponentId;
+		if (merged.controlVarName === '') delete merged.controlVarName;
+
+		this._document = {
+			...this._document,
 			components: this._document.components.map((c) =>
-				c.id === id
-					? {
-							...c,
-							...patch,
-							value: nextValue,
-							numericValue: nextNumeric
-						}
-					: c
+				c.id === id ? { ...c, controlRef: anchorControlNodes(merged, this._graph) } : c
 			)
 		};
 	}
@@ -608,9 +796,41 @@ class CircuitStore {
 			}
 		}
 
+		if (nextUnknownProblem?.constraint.kind === 'node_voltage') {
+			const targetPin = reanchorAwayFrom(this._graph, nextUnknownProblem.constraint.targetPin, id);
+			nextUnknownProblem = {
+				...nextUnknownProblem,
+				constraint: { ...nextUnknownProblem.constraint, targetPin }
+			};
+		}
+		const tt = this._theveninTarget;
+		if (tt?.kind === 'terminals') {
+			this._theveninTarget = {
+				...tt,
+				pinA: reanchorAwayFrom(this._graph, tt.pinA, id),
+				pinB: reanchorAwayFrom(this._graph, tt.pinB, id)
+			};
+		}
+
+		const graph = this._graph;
 		this._document = {
 			...this._document,
-			components: this._document.components.filter((c) => c.id !== id),
+			components: this._document.components
+				.filter((c) => c.id !== id)
+				.map((c) => {
+					const ref = c.controlRef;
+					if (!ref || (ref.controlNodePosPin?.componentId !== id && ref.controlNodeNegPin?.componentId !== id)) {
+						return c;
+					}
+					return {
+						...c,
+						controlRef: {
+							...ref,
+							controlNodePosPin: reanchorAwayFrom(graph, ref.controlNodePosPin, id),
+							controlNodeNegPin: reanchorAwayFrom(graph, ref.controlNodeNegPin, id)
+						}
+					};
+				}),
 			unknownProblem: nextUnknownProblem
 		};
 
@@ -1052,6 +1272,34 @@ class CircuitStore {
 		} else {
 			this._theveninTarget = undefined;
 		}
+
+		// Anchor node references from the loaded file/link to pins of the loaded layout
+		if (this._document.components.some((c) => c.controlRef?.controlNodePos || c.controlRef?.controlNodeNeg)) {
+			const graph = this._graph;
+			this._document = {
+				...this._document,
+				components: this._document.components.map((c) =>
+					c.controlRef && (c.controlRef.controlNodePos || c.controlRef.controlNodeNeg)
+						? { ...c, controlRef: anchorControlNodes(c.controlRef, graph) }
+						: c
+				)
+			};
+		}
+		const up = this._document.unknownProblem;
+		if (up?.constraint.kind === 'node_voltage' && !up.constraint.targetPin) {
+			this._document = {
+				...this._document,
+				unknownProblem: { ...up, constraint: this.anchorConstraint(up.constraint) }
+			};
+		}
+		const tt = this._theveninTarget;
+		if (tt?.kind === 'terminals') {
+			this._theveninTarget = {
+				...tt,
+				pinA: tt.pinA ?? anchorForNode(this._graph, tt.nodeA),
+				pinB: tt.pinB ?? anchorForNode(this._graph, tt.nodeB)
+			};
+		}
 	}
 
 	loadPreset(presetId: string): boolean {
@@ -1094,15 +1342,26 @@ class CircuitStore {
 		) {
 			return;
 		}
+		if (this._theveninTarget?.kind === 'component' && this._theveninTarget.componentId === id) return;
+		this.recordSnapshot();
 		this._theveninTarget = { kind: 'component', componentId: id };
 	}
 
 	setTheveninTerminals(nodeA: string, nodeB: string): void {
 		if (!nodeA || !nodeB || nodeA === nodeB) return;
-		this._theveninTarget = { kind: 'terminals', nodeA, nodeB };
+		this.recordSnapshot();
+		this._theveninTarget = {
+			kind: 'terminals',
+			nodeA,
+			nodeB,
+			pinA: anchorForNode(this._graph, nodeA),
+			pinB: anchorForNode(this._graph, nodeB)
+		};
 	}
 
 	clearTheveninTarget(): void {
+		if (!this._theveninTarget) return;
+		this.recordSnapshot();
 		this._theveninTarget = undefined;
 	}
 
@@ -1114,10 +1373,22 @@ class CircuitStore {
 				? {
 						...problem,
 						...(problem.terms ? { terms: problem.terms.map((t) => ({ ...t })) } : {}),
-						constraint: { ...problem.constraint }
+						constraint: this.anchorConstraint(problem.constraint)
 					}
 				: undefined
 		};
+	}
+
+	/** Attach a pin anchor to a node_voltage constraint (targetId is a current node ID). */
+	private anchorConstraint(
+		constraint: UnknownProblemSpec['constraint']
+	): UnknownProblemSpec['constraint'] {
+		if (constraint.kind !== 'node_voltage') {
+			const { targetPin: _drop, ...rest } = constraint;
+			return { ...rest };
+		}
+		const targetPin = anchorForNode(this._graph, constraint.targetId);
+		return targetPin ? { ...constraint, targetPin } : { ...constraint };
 	}
 
 	clearUnknownProblem(): void {
