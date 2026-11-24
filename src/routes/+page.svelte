@@ -9,6 +9,7 @@
 		ChevronDown,
 		CircuitBoard,
 		Cog,
+		Download,
 		Eraser,
 		FileCode2,
 		Link2,
@@ -45,6 +46,7 @@
 	} from '$lib/components/machines';
 	import {
 		Badge,
+		BrandMark,
 		Button,
 		Input,
 		Separator,
@@ -64,6 +66,7 @@
 	} from '$lib/engine';
 	import { AC_ENABLED, DEPLOY_COMMIT_SHA, IS_STAGING, MACHINES_ENABLED } from '$lib/env';
 	import { circuit } from '$lib/stores/circuit.svelte';
+	import { pwa } from '$lib/stores/pwa.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { cn } from '$lib/utils';
 
@@ -357,22 +360,7 @@
 			{/if}
 
 			<div class="flex shrink-0 items-center gap-0.5 sm:gap-1.5 lg:gap-2 xl:min-w-0">
-				<svg
-					width="18"
-					height="18"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.85"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-					class="size-[18px] shrink-0 text-foreground"
-				>
-					<path d="M3 12h3.5l1.75-4.5 2.5 9 2.5-9 2.5 9L17.5 12H21" />
-					<circle cx="3" cy="12" r="1.4" fill="currentColor" stroke="none" />
-					<circle cx="21" cy="12" r="1.4" fill="currentColor" stroke="none" />
-				</svg>
+				<BrandMark size={20} class="size-5" />
 				<span class="hidden shrink-0 whitespace-nowrap text-[13px] font-semibold tracking-tight text-foreground sm:inline">
 					Circuit Lab
 				</span>
@@ -1073,6 +1061,20 @@
 				<Settings class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 				<span>Settings</span>
 			</button>
+			{#if pwa.canInstall}
+				<button
+					type="button"
+					role="menuitem"
+					onclick={() => {
+						mobileMenuOpen = false;
+						void pwa.promptInstall();
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-primary transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<Download class="size-4 shrink-0" aria-hidden="true" />
+					<span>Install App</span>
+				</button>
+			{/if}
 			<Separator class="my-1" />
 			<button
 				type="button"
@@ -1265,7 +1267,7 @@
 	<!-- Mobile & Tablet Bottom Navigation Bar (< lg) -->
 	<nav
 		aria-label="Workspace navigation"
-		class="flex shrink-0 border-t border-border bg-surface-rail pb-safe lg:hidden"
+		class="flex shrink-0 border-t border-border bg-surface-rail pb-[env(safe-area-inset-bottom)] lg:hidden"
 	>
 		<button
 			type="button"
