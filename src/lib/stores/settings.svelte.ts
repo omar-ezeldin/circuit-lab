@@ -174,12 +174,25 @@ class SettingsStore {
 		persistSettings(this.state);
 	}
 
+	/** AC magnitude mode carried by an opened file, preset, or share link: used for this session, never saved. */
+	private sessionAcMagnitudeMode = $state<AcMagnitudeMode | null>(null);
+
 	get acMagnitudeMode(): AcMagnitudeMode {
-		return this.state.acMagnitudeMode;
+		return this.sessionAcMagnitudeMode ?? this.state.acMagnitudeMode;
 	}
+	/** The user's own choice: saved, and replaces any file/preset/link AC magnitude mode. */
 	set acMagnitudeMode(value: AcMagnitudeMode) {
+		this.sessionAcMagnitudeMode = null;
 		this.state.acMagnitudeMode = value;
 		persistSettings(this.state);
+	}
+	/** Solve a file/preset/share link in its own AC magnitude mode without overwriting the saved preference. */
+	useAcMagnitudeModeForSession(value: AcMagnitudeMode): void {
+		this.sessionAcMagnitudeMode = value;
+	}
+	/** Clears any document-scoped AC magnitude mode override, returning to the saved preference. */
+	clearSessionAcMagnitudeMode(): void {
+		this.sessionAcMagnitudeMode = null;
 	}
 
 	get showGrid(): boolean {
@@ -208,11 +221,21 @@ class SettingsStore {
 
 	/** Returns a plain snapshot of all current settings. */
 	snapshot(): CircuitLabSettings {
-		return { ...this.state };
+		return {
+			...this.state,
+			unitSystem: this.unitSystem,
+			acMagnitudeMode: this.acMagnitudeMode
+		};
 	}
 
 	/** Batch-updates one or more settings and persists once. */
 	update(patch: Partial<CircuitLabSettings>): void {
+		if ('unitSystem' in patch && patch.unitSystem !== undefined) {
+			this.sessionUnitSystem = null;
+		}
+		if ('acMagnitudeMode' in patch && patch.acMagnitudeMode !== undefined) {
+			this.sessionAcMagnitudeMode = null;
+		}
 		this.state = sanitizeSettings({ ...this.state, ...patch });
 		persistSettings(this.state);
 	}
@@ -220,12 +243,15 @@ class SettingsStore {
 	/** Restores all settings to their canonical defaults and persists. */
 	reset(): void {
 		this.sessionUnitSystem = null;
+		this.sessionAcMagnitudeMode = null;
 		this.state = { ...DEFAULT_SETTINGS };
 		persistSettings(this.state);
 	}
 
 	/** Reloads settings from localStorage (useful after external storage updates or in tests). */
 	reload(): void {
+		this.sessionUnitSystem = null;
+		this.sessionAcMagnitudeMode = null;
 		this.state = loadPersistedSettings();
 	}
 }

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { PRESETS } from '$lib/data/presets';
-import { buildElectricalGraph } from '$lib/engine';
+import { buildElectricalGraph, type CircuitDocument } from '$lib/engine';
 import { computeWireCrossings } from '$lib/components/editor/helpers';
 import { circuit } from './circuit.svelte';
+import { settings } from './settings.svelte';
 
 beforeEach(() => {
+	settings.reset();
 	circuit.resetToDefault();
 });
 
@@ -518,5 +520,99 @@ describe('circuit reactive store', () => {
 		expect(
 			computeWireCrossings(circuit.document.components, circuit.document.wires)[0].connected
 		).toBe(true);
+	});
+
+	it('applies document acMagnitudeMode for the session without overwriting persisted preference, halves Peak AC power vs RMS, and allows manual override', () => {
+		// Persisted user preference starts as 'rms'
+		settings.acMagnitudeMode = 'rms';
+		expect(settings.acMagnitudeMode).toBe('rms');
+
+		const peakAcDoc: CircuitDocument = {
+			schemaVersion: 1,
+			name: 'Peak AC Divider',
+			mode: 'ac',
+			frequencyHz: 60,
+			acMagnitudeMode: 'peak',
+			components: [
+				{
+					id: 'V1',
+					kind: 'voltage_source',
+					label: 'V1',
+					x: 4,
+					y: 6,
+					rotation: 90,
+					value: '10∠0°',
+					unit: 'V'
+				},
+				{
+					id: 'R1',
+					kind: 'resistor',
+					label: 'R1',
+					x: 8,
+					y: 4,
+					rotation: 0,
+					value: '10',
+					unit: 'Ω'
+				},
+				{
+					id: 'R2',
+					kind: 'resistor',
+					label: 'R2',
+					x: 12,
+					y: 6,
+					rotation: 90,
+					value: '10',
+					unit: 'Ω'
+				},
+				{ id: 'G1', kind: 'ground', label: 'GND', x: 4, y: 8, rotation: 0, value: '0' }
+			],
+			wires: [
+				{ id: 'w1', points: [{ x: 4, y: 4 }, { x: 6, y: 4 }] },
+				{ id: 'w2', points: [{ x: 10, y: 4 }, { x: 12, y: 4 }] },
+				{ id: 'w3', points: [{ x: 4, y: 8 }, { x: 12, y: 8 }] }
+			]
+		};
+
+		// Loading a Peak AC document switches effective acMagnitudeMode to 'peak' for this session
+		circuit.loadDocument(peakAcDoc, { kind: 'component', componentId: 'R2' });
+		expect(settings.acMagnitudeMode).toBe('peak');
+		expect(settings.snapshot().acMagnitudeMode).toBe('peak');
+		expect(circuit.solution.mna.valid).toBe(true);
+		expect(circuit.solution.mna.acMagnitudeMode).toBe('peak');
+
+		// Peak: V = 10 V_pk across 20 Ω -> I = 0.5 A_pk -> P_total = 0.5 * 10 * 0.5 = 2.5 W
+		// Thévenin looking into R2: V_th = 10 V_pk, Z_th = 10 Ω -> P_max = |V_th|^2 / (8 R_th) = 100 / 80 = 1.25 W
+		const peakPower = circuit.solution.mna.powerBalance.totalAbsorbedReal;
+		const peakMaxPower = circuit.solution.theveninNorton?.maxPowerTransfer?.maxRealPowerW;
+		expect(peakPower).toBeCloseTo(2.5, 9);
+		expect(peakMaxPower).toBeCloseTo(1.25, 9);
+
+		// Persisted preference was NOT overwritten: loading a document without acMagnitudeMode restores 'rms'
+		const { acMagnitudeMode: _omitted, ...unspecifiedAcDoc } = peakAcDoc;
+		circuit.loadDocument(unspecifiedAcDoc, { kind: 'component', componentId: 'R2' });
+		expect(settings.acMagnitudeMode).toBe('rms');
+		expect(circuit.solution.mna.acMagnitudeMode).toBe('rms');
+		expect(circuit.solution.mna.powerBalance.totalAbsorbedReal).toBeCloseTo(peakPower * 2, 9);
+		expect(circuit.solution.theveninNorton?.maxPowerTransfer?.maxRealPowerW).toBeCloseTo(
+			peakMaxPower! * 2,
+			9
+		);
+
+		// Reload Peak doc, then manually toggle settings.acMagnitudeMode = 'rms' -> immediately overrides session mode
+		circuit.loadDocument(peakAcDoc, { kind: 'component', componentId: 'R2' });
+		expect(settings.acMagnitudeMode).toBe('peak');
+		expect(circuit.solution.mna.powerBalance.totalAbsorbedReal).toBeCloseTo(2.5, 9);
+
+		settings.acMagnitudeMode = 'rms';
+		expect(settings.acMagnitudeMode).toBe('rms');
+		expect(circuit.solution.mna.acMagnitudeMode).toBe('rms');
+		expect(circuit.solution.mna.powerBalance.totalAbsorbedReal).toBeCloseTo(5.0, 9);
+		expect(circuit.solution.theveninNorton?.maxPowerTransfer?.maxRealPowerW).toBeCloseTo(2.5, 9);
+
+		// Clearing a Peak session returns to persisted preference ('rms')
+		circuit.loadDocument(peakAcDoc);
+		expect(settings.acMagnitudeMode).toBe('peak');
+		circuit.clearCircuit();
+		expect(settings.acMagnitudeMode).toBe('rms');
 	});
 });

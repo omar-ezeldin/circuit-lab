@@ -267,7 +267,7 @@ export function formatRectangularQuantity(
 	}
 
 	const imAbsStr = formatScalar(Math.abs(imScaled), prec);
-	const imTerm = imAbsStr === '1' ? 'j' : `j${imAbsStr}`;
+	const imTerm = imAbsStr === '1' && !unitWithPrefix ? 'j' : `j${imAbsStr}`;
 
 	if (reZero) {
 		const signedIm = imScaled < 0 ? `-${imTerm}` : imTerm;

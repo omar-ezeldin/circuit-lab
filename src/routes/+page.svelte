@@ -247,7 +247,11 @@
 
 	async function handleCopyShareLink(): Promise<boolean> {
 		const hash = await encodeCircuitToHash({
-			document: { ...circuit.document, unitSystem: settings.unitSystem },
+			document: {
+				...circuit.document,
+				unitSystem: settings.unitSystem,
+				acMagnitudeMode: settings.acMagnitudeMode
+			},
 			theveninTarget: circuit.theveninTarget,
 			unitSystem: settings.unitSystem
 		});
@@ -1247,7 +1251,11 @@
 <PresetsDialog bind:open={presetsOpen} onSelectPreset={handleSelectPreset} />
 <JsonDialog
 	bind:open={jsonOpen}
-	document={circuit.document}
+	document={{
+		...circuit.document,
+		unitSystem: settings.unitSystem,
+		acMagnitudeMode: settings.acMagnitudeMode
+	}}
 	onImportDocument={handleImportDocument}
 	onCopyShareLink={handleCopyShareLink}
 	{linkCopied}
