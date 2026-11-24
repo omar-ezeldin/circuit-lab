@@ -67,7 +67,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-01',
 				label: 'Y-Load with Line Impedance (600 V, 160 kW/ph)',
 				source: 'Lecture 1 Slides 18–19',
-				description: 'Balanced Y load at V_AN = 600/√3 V, 160 kW/phase at 0.8 lag, line Z = 0.005 + j0.025 Ω.',
+				description: 'Balanced Y load at Vₐₙ = 600/√3 V, 160 kW/phase at 0.8 lag, line Z = 0.005 + j0.025 Ω.',
 				input: {
 					loadConnection: 'Y',
 					sourceConnection: 'Y',
@@ -91,7 +91,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Linear Series Magnetic Circuit (Core + Air Gap)',
 		shortLabel: 'Linear Core + Gap',
 		description:
-			'Compute reluctance, MMF, flux/current, inductance L, stored energy W_f, magnetization M, and coil Q-factor with optional fringing.',
+			'Compute reluctance, MMF, flux/current, inductance L, stored energy, magnetization M, and coil Q-factor with optional fringing.',
 		keyFormulasLatex: [
 			'\\mathcal{R}_c = \\frac{l_c}{\\mu_0 \\mu_r A_c}, \\quad \\mathcal{R}_g = \\frac{l_g}{\\mu_0 (1+C_f) A_c}, \\quad N I = \\Phi\\mathcal{R}_{\\text{eq}}',
 			'L = \\frac{N^2}{\\mathcal{R}_{\\text{eq}}}, \\quad W_f = \\frac{1}{2} L I^2, \\quad M = (\\mu_r - 1)H_c'
@@ -99,9 +99,9 @@ export const MACHINE_QUESTION_TYPES: {
 		presets: [
 			{
 				id: 'ST-02',
-				label: 'Series Core with 5% Fringing (B_g = 0.5 T)',
+				label: 'Series Core with 5% Fringing (Gap B = 0.5 T)',
 				source: 'Summer 2023 Final Q4d / Lecture 2&3 Ex. 1',
-				description: 'l_c = 40 cm, A_c = 12 cm², μ_r = 4000, l_g = 0.05 cm, N = 400, B_g = 0.5 T, C_f = 5%.',
+				description: 'Core ℓ = 40 cm, A = 12 cm², μᵣ = 4000, gap 0.05 cm, N = 400, gap B = 0.5 T, fringing 5%.',
 				input: {
 					coreLengthM: 0.4,
 					coreAreaM2: 12e-4,
@@ -115,9 +115,9 @@ export const MACHINE_QUESTION_TYPES: {
 			},
 			{
 				id: 'ST-03',
-				label: 'Iron Ring with Air Gap (Find B_g, H_c, M)',
+				label: 'Iron Ring with Air Gap (Find Gap B, Core H, M)',
 				source: 'Fall 2024 Final Q4a / Spring 2025 Final Q3b',
-				description: 'l_c = 50 cm, l_g = 0.1 cm, N = 300, μ_r = 400, I = 1 A (area-independent).',
+				description: 'Core ℓ = 50 cm, gap 0.1 cm, N = 300, μᵣ = 400, I = 1 A (area-independent).',
 				input: {
 					coreLengthM: 0.5,
 					muR: 400,
@@ -136,7 +136,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Nonlinear B–H Curve & Parallel 3-Limb Core',
 		shortLabel: 'Nonlinear / 3-Limb',
 		description:
-			'Interpolate core field intensity H_c from a B–H magnetization table or solve a 3-limb parallel magnetic circuit using magnetic KCL/KVL.',
+			'Interpolate core field intensity H from a B–H magnetization table or solve a 3-limb parallel magnetic circuit using magnetic KCL/KVL.',
 		keyFormulasLatex: [
 			'N I = H_c(B_c)\\,l_c + \\frac{B_g}{\\mu_0} l_g, \\quad \\Phi_T = \\Phi_{\\text{center}} + \\Phi_{\\text{right}}'
 		],
@@ -145,7 +145,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-05',
 				label: 'Nonlinear Ferromagnetic Core with 1 mm Gap',
 				source: 'Lecture 2&3 Example 3c',
-				description: 'l_c = 30 cm, A_c = π cm², l_g = 1 mm, N = 600, Φ = 0.5 mWb with nonlinear B–H table.',
+				description: 'Core ℓ = 30 cm, A = π cm², gap 1 mm, N = 600, Φ = 0.5 mWb with nonlinear B–H table.',
 				input: {
 					topology: 'series-nonlinear',
 					coreLengthM: 0.3,
@@ -171,7 +171,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Variable-Reluctance Relay / Movable-Core Actuator',
 		shortLabel: 'Relay / Actuator',
 		description:
-			'Evaluate reluctance R(x), inductance L(x), magnetic closing force F_fld, and mechanical work W_m for slow (constant I) or fast (constant Φ) closure.',
+			'Evaluate reluctance R(x), inductance L(x), magnetic closing force, and mechanical work for slow (constant I) or fast (constant Φ) closure.',
 		keyFormulasLatex: [
 			'\\mathcal{R}_{\\text{eq}}(g) = \\mathcal{R}_c + \\frac{n_g g}{\\mu_0 A_c}, \\quad F_{\\text{fld}} = -\\frac{1}{2}\\Phi^2\\frac{d\\mathcal{R}_{\\text{eq}}}{dg}',
 			'W_{m,\\text{slow}} = W_{f2} - W_{f1}\\;(I=\\text{const}), \\quad W_{m,\\text{fast}} = W_{f1} - W_{f2}\\;(\\Phi=\\text{const})'
@@ -181,7 +181,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-06',
 				label: '2-Gap Relay Slow Closure (Constant I)',
 				source: 'Spring 2026 Final Q3b',
-				description: 'l_c = 50 cm, μ_r = 400, A_c = 0.003 m², N = 300, two 4 mm gaps closing slowly from B_g = 1.1 T.',
+				description: 'Core ℓ = 50 cm, μᵣ = 400, A = 0.003 m², N = 300, two 4 mm gaps closing slowly from gap B = 1.1 T.',
 				input: {
 					coreLengthM: 0.5,
 					coreAreaM2: 0.003,
@@ -198,7 +198,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-07',
 				label: 'Ideal Core Single-Gap Fast Closure (Constant Φ)',
 				source: 'Summer 2024 Final Q4b',
-				description: 'A = 15 cm², μ_r = ∞, N = 100, Φ = 0.1 Wb, gap closing from 4 cm to 0.',
+				description: 'A = 15 cm², μᵣ = ∞, N = 100, Φ = 0.1 Wb, gap closing from 4 cm to 0.',
 				input: {
 					coreLengthM: 0,
 					coreAreaM2: 15e-4,
@@ -221,7 +221,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Transformer EMF Equation & Core Loss Separation / Scaling',
 		shortLabel: 'EMF & Core Loss',
 		description:
-			'Compute RMS induced EMF E = 4.44 f N Φ_m, separate hysteresis & eddy-current losses at constant B_m, or scale core losses with (V, f).',
+			'Compute RMS induced EMF E = 4.44 f N Φₘ, separate hysteresis & eddy-current losses at constant Bₘ, or scale core losses with (V, f).',
 		keyFormulasLatex: [
 			'E = 4.44 f N \\Phi_m, \\quad \\frac{P_c}{f} = A + B f',
 			'P_{h2} = P_{h1}\\left(\\frac{V_2}{V_1}\\right)^n\\left(\\frac{f_1}{f_2}\\right)^{n-1}, \\quad P_{e2} = P_{e1}\\left(\\frac{V_2}{V_1}\\right)^2'
@@ -231,7 +231,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-08',
 				label: 'Core Loss Separation (40 Hz & 60 Hz → 50 Hz)',
 				source: 'Spring 2026 Final Q4b / Summer 2023 Q3c',
-				description: 'P_c = 52 W at 40 Hz and 90 W at 60 Hz (constant B_m); find P_h, P_e at 50 Hz.',
+				description: 'Core loss = 52 W at 40 Hz and 90 W at 60 Hz (constant Bₘ); find Pₕ, Pₑ at 50 Hz.',
 				input: {
 					mode: 'loss-separation',
 					f1Hz: 40,
@@ -245,7 +245,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-09',
 				label: 'Core Loss Scaling (220 V 60 Hz → 230 V 50 Hz)',
 				source: 'Fall 2023 Final Q3b / Spring 2025 Q4.6',
-				description: 'P_h1 = 340 W, P_e1 = 120 W at 220 V, 60 Hz (n = 1.6); evaluate at 230 V, 50 Hz.',
+				description: 'Pₕ₁ = 340 W, Pₑ₁ = 120 W at 220 V, 60 Hz (n = 1.6); evaluate at 230 V, 50 Hz.',
 				input: {
 					mode: 'vf-scaling',
 					v1V: 220,
@@ -266,7 +266,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Open-Circuit & Short-Circuit Tests → Equivalent Circuit',
 		shortLabel: 'OC & SC Tests',
 		description:
-			'Extract R_c, X_m from OC test and R_eq, X_eq from SC test, automatically referring parameters to primary or secondary for step-down or step-up units.',
+			'Extract core-branch resistance & magnetizing reactance Xₘ from the OC test and equivalent series impedance from the SC test, referred to primary or secondary.',
 		keyFormulasLatex: [
 			'R_c = \\frac{V_0^2}{W_0}, \\quad X_m = \\frac{V_0}{\\sqrt{I_0^2 - (W_0/V_0)^2}}, \\quad R_{\\text{eq}} = \\frac{W_{sc}}{I_{sc}^2}, \\quad X_{\\text{eq}} = \\sqrt{(V_{sc}/I_{sc})^2 - R_{\\text{eq}}^2}'
 		],
@@ -328,7 +328,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Transformer On-Load Performance (VR, Efficiency, Max η)',
 		shortLabel: 'On-Load Performance',
 		description:
-			'Analyze the approximate cantilever equivalent circuit for lagging, unity, or leading power factors: exact & approximate %VR, I_1, η, and S_maxη.',
+			'Analyze the approximate cantilever equivalent circuit for lagging, unity, or leading power factors: exact & approximate %VR, primary current I₁, efficiency η, and max-η kVA.',
 		keyFormulasLatex: [
 			'\\bar{V}_1 = \\bar{V}_2\' + \\bar{I}_2\'(R_{e1} + jX_{e1}), \\quad \\%VR = \\frac{|\\bar{V}_1| - |\\bar{V}_2\'|}{|\\bar{V}_2\'|}\\times 100\\%',
 			'\\eta = \\frac{P_{\\text{out}}}{P_{\\text{out}} + P_i + x^2 P_{cu,\\text{FL}}}\\times 100\\%, \\quad S_{\\max\\eta} = S_{\\text{rated}}\\sqrt{\\frac{P_i}{P_{cu,\\text{FL}}}}'
@@ -338,7 +338,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-12',
 				label: '2.2 kVA 440/220 V at FL, 0.707 Lag',
 				source: 'Spring 2026 Final Q4a / Summer 2024 Q3c',
-				description: 'R_e1 = 3 Ω, X_e1 = 4 Ω, R_c1 = 2.5 kΩ, X_m1 = 2 kΩ at full load 0.707 lagging.',
+				description: 'Rₑ₁ = 3 Ω, Xₑ₁ = 4 Ω, core R = 2.5 kΩ, Xₘ₁ = 2 kΩ at full load 0.707 lagging.',
 				input: {
 					ratedVA: 2200,
 					v1Rated: 440,
@@ -358,7 +358,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-13',
 				label: '10 kVA 2000/200 V at 8 kW, 0.8 Lag',
 				source: 'Fall 2025 Final Q3b / Summer 2025 Q3b',
-				description: 'P_i = 125 W at 0.15 lag, Z_e,HV = 2 + j4 Ω; evaluate max η and VR at 8 kW, 0.8 lag.',
+				description: 'Core loss Pᵢ = 125 W at 0.15 lag, HV Zₑ = 2 + j4 Ω; evaluate max η and VR at 8 kW, 0.8 lag.',
 				input: {
 					ratedVA: 10_000,
 					v1Rated: 2000,
@@ -383,7 +383,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Efficiency vs. Load Fraction & Two-Point Loss Separation',
 		shortLabel: 'Efficiency & Losses',
 		description:
-			'Compute efficiency at any load fraction x and PF from known losses, or separate P_i and P_cu,FL from two known (x, PF, η) operating points.',
+			'Compute efficiency at any load fraction x and PF from known losses, or separate core loss Pᵢ and full-load copper loss from two known (x, PF, η) operating points.',
 		keyFormulasLatex: [
 			'P_i + x_k^2 P_{cu,\\text{FL}} = x_k S_{\\text{rated}}\\cos\\phi_k\\left(\\frac{1}{\\eta_k} - 1\\right), \\quad x_{\\max\\eta} = \\sqrt{\\frac{P_i}{P_{cu,\\text{FL}}}}'
 		],
@@ -392,7 +392,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-14',
 				label: '500 kVA Loss Separation (95% at FL & 60% FL)',
 				source: 'Sheet 3 Q11',
-				description: '500 kVA unit has η = 95% at 100% and 60% FL (UPF); find P_i, P_cu,FL, and η at 75% FL.',
+				description: '500 kVA unit has η = 95% at 100% and 60% FL (UPF); find core loss Pᵢ, full-load Cu loss, and η at 75% FL.',
 				input: {
 					mode: 'two-point-separation',
 					ratedVA: 500_000,
@@ -404,7 +404,7 @@ export const MACHINE_QUESTION_TYPES: {
 			},
 			{
 				id: 'ST-15',
-				label: '30 kVA Known Losses (P_i = 360 W, P_cu,FL = 480 W)',
+				label: '30 kVA Known Losses (360 W Core, 480 W Cu)',
 				source: 'Summer 2024 Q3b / Fall 2023 Q3a / Sheet 3 Q9',
 				description: 'Find half-load efficiency, full-load efficiency, and kVA for maximum efficiency.',
 				input: {
@@ -426,16 +426,16 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'DC Machine EMF, Winding Constant & Torque Scaling',
 		shortLabel: 'DC EMF & Torque',
 		description:
-			'Compute generated EMF from lap/wave winding geometry or extract K_e = K_t from a terminal operating point and scale torque at constant flux.',
+			'Compute generated EMF from lap/wave winding geometry or extract Kₑ = Kₜ from a terminal operating point and scale torque at constant flux.',
 		keyFormulasLatex: [
 			'E_a = \\frac{P Z_a}{60 a}\\,n\\,\\Phi_p, \\quad K_e = K_t = \\frac{E_a}{\\omega}, \\quad T_d = K_t I_a'
 		],
 		presets: [
 			{
 				id: 'ST-16',
-				label: 'Torque Constant K_t of 25 HP DC Motor',
+				label: 'Torque Constant Kₜ of 25 HP DC Motor',
 				source: 'Summer 2024 Final Q4a',
-				description: 'n = 250 rpm, V_t = 120 V, I_a = 5.6 A, R_a = 0.473 Ω; find K_t = K_e.',
+				description: 'n = 250 rpm, Vₜ = 120 V, Iₐ = 5.6 A, Rₐ = 0.473 Ω; find Kₜ = Kₑ.',
 				input: {
 					mode: 'operating-point',
 					machineMode: 'motor',
@@ -449,7 +449,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-17',
 				label: 'Torque Scaling at Constant Field (20 A → 10 A)',
 				source: 'Sheet 4 Q2',
-				description: 'V_t = 250 V, R_a = 0.5 Ω, I_a1 = 20 A at 1500 rpm; find T_d at I_a2 = 10 A.',
+				description: 'Vₜ = 250 V, Rₐ = 0.5 Ω, Iₐ₁ = 20 A at 1500 rpm; find torque at Iₐ₂ = 10 A.',
 				input: {
 					mode: 'operating-point',
 					machineMode: 'motor',
@@ -477,9 +477,9 @@ export const MACHINE_QUESTION_TYPES: {
 		presets: [
 			{
 				id: 'ST-18',
-				label: 'DC Shunt Generator Load Current (E_a = 254 V, V_t = 240 V)',
+				label: 'DC Shunt Generator Load Current (Eₐ = 254 V, Vₜ = 240 V)',
 				source: 'Summer 2024 Final Q4c / Summer 2023 Q4c',
-				description: 'R_a = 0.04 Ω, R_f = 24 Ω, E_a = 254 V, V_t = 240 V; find I_a, I_f, I_L.',
+				description: 'Rₐ = 0.04 Ω, field R = 24 Ω, Eₐ = 254 V, Vₜ = 240 V; find armature, field, and load currents.',
 				input: {
 					generatorType: 'shunt',
 					solveFor: 'load-from-emf',
@@ -495,7 +495,7 @@ export const MACHINE_QUESTION_TYPES: {
 	'QT-DC-3': {
 		id: 'QT-DC-3',
 		category: 'dc-machines',
-		title: 'DC Motor Speed Control (R_add, V_t, Field Flux)',
+		title: 'DC Motor Speed Control (Series R, Vₜ, Field Flux)',
 		shortLabel: 'DC Motor Speed Control',
 		description:
 			'Re-evaluate DC motor speed, back EMF, current, and torque after adding armature resistance, changing terminal voltage, or weakening field flux.',
@@ -505,9 +505,9 @@ export const MACHINE_QUESTION_TYPES: {
 		presets: [
 			{
 				id: 'ST-19',
-				label: 'Voltage Reduced by 20% at Constant P_in',
+				label: 'Voltage Reduced by 20% at Constant Pᵢₙ',
 				source: 'Fall 2025 Q3c / Summer 2025 Q3c / Spring 2025 Q3d',
-				description: '240 V sep. excited DC motor at 1000 rpm, P_in = 7800 W, R_a = 0.221 Ω; V_t reduced to 192 V.',
+				description: '240 V sep. excited DC motor at 1000 rpm, Pᵢₙ = 7800 W, Rₐ = 0.221 Ω; Vₜ reduced to 192 V.',
 				input: {
 					motorType: 'separately-excited',
 					vt1V: 240,
@@ -521,9 +521,9 @@ export const MACHINE_QUESTION_TYPES: {
 			},
 			{
 				id: 'ST-20',
-				label: 'Armature Series Resistance R_add = 1.0 Ω (FL Torque)',
+				label: 'Armature Series Resistance = 1.0 Ω (FL Torque)',
 				source: 'Spring 2024 Final Q3c / Fall 2024 Final Q4b',
-				description: '240 V DC shunt motor, R_a = 0.4 Ω, n_1 = 600 rpm, I_a1 = 25 A; add R_add = 1.0 Ω at FL torque.',
+				description: '240 V DC shunt motor, Rₐ = 0.4 Ω, n₁ = 600 rpm, Iₐ₁ = 25 A; add 1.0 Ω series resistance at FL torque.',
 				input: {
 					motorType: 'shunt',
 					vt1V: 240,
@@ -544,14 +544,14 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Induction Motor Speed, Slip, Rotor Frequency & Rated Torque',
 		shortLabel: 'Speed, Slip & Torque',
 		description:
-			'Calculate synchronous speed N_s, rotor speed N_r, slip speed, rotor current frequency f_r = s f_s, and rated shaft torque.',
+			'Calculate synchronous speed Nₛ, rotor speed Nᵣ, slip speed, rotor current frequency fᵣ = s·fₛ, and rated shaft torque.',
 		keyFormulasLatex: [
 			'N_s = \\frac{120 f_s}{P}, \\quad N_r = (1-s)N_s, \\quad f_r = s f_s, \\quad T_{\\text{sh}} = \\frac{P_{\\text{out}}}{\\omega_r}'
 		],
 		presets: [
 			{
 				id: 'ST-21',
-				label: '4-Pole, 50 Hz, 10 HP IM (s_nl = 1%, s_fl = 4%)',
+				label: '4-Pole, 50 Hz, 10 HP IM (1% NL, 4% FL Slip)',
 				source: 'Fall 2023 Final Q4a',
 				description: '400 V, 4-pole, 50 Hz, 10 HP Y-connected induction motor with 1% no-load slip and 4% full-load slip.',
 				input: {
@@ -571,7 +571,7 @@ export const MACHINE_QUESTION_TYPES: {
 		title: 'Induction Motor Power Flow Stages (Forward & Backward)',
 		shortLabel: 'Power Flow Stages',
 		description:
-			'Trace electrical-to-mechanical power conversion forward (P_in → P_g → P_d → P_out) or backward (P_out → P_d → P_g → P_in) with slip, torque, and efficiency.',
+			'Trace electrical-to-mechanical power conversion forward (Pᵢₙ → Air-Gap → Developed → Pₒᵤₜ) or backward (Pₒᵤₜ → Developed → Air-Gap → Pᵢₙ) with slip, torque, and efficiency.',
 		keyFormulasLatex: [
 			'P_g = P_{i/p} - P_{cu,s} - P_{\\text{core}}, \\quad P_{cu,r} = s P_g, \\quad P_d = (1 - s) P_g, \\quad P_{o/p} = P_d - P_{\\text{mech}}'
 		],
@@ -580,7 +580,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-22',
 				label: '480 V, 50 HP Forward Power Flow (60 Hz)',
 				source: 'Spring 2026 Q3c / Fall 2025 Q4b / Lecture 6 Example',
-				description: '480 V, 4-pole, 60 Hz, I_L = 60 A at 0.85 lag, P_cu,s = 2 kW, P_cu,r = 700 W, P_core = 1800 W, P_mech = 600 W.',
+				description: '480 V, 4-pole, 60 Hz, line current 60 A at 0.85 lag, stator Cu 2 kW, rotor Cu 700 W, core 1800 W, mech. 600 W.',
 				input: {
 					direction: 'forward',
 					connection: 'Y',
@@ -599,7 +599,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-23B',
 				label: '100 HP, 4-Pole, 60 Hz Backward Power Flow',
 				source: 'Sheet 5 Q8',
-				description: '100 HP at 1732 rpm, P_mech = 900 W, P_core = 4200 W, P_cu,s = 2700 W; find P_in and η.',
+				description: '100 HP at 1732 rpm, mech. 900 W, core 4200 W, stator Cu 2700 W; find Pᵢₙ and η.',
 				input: {
 					direction: 'backward',
 					connection: 'Y',
@@ -631,7 +631,7 @@ export const MACHINE_QUESTION_TYPES: {
 				id: 'ST-24-EXACT',
 				label: '208 V, 30 HP Y-Connected IM (Exact T-Circuit)',
 				source: 'Sheet 5 Q7 (TA Worked Solution)',
-				description: 'R1=0.1, X1=0.21, R2\'=0.07, X2\'=0.21, Xm=10 Ω, s=0.05, P_mech=500 W, P_core=400 W.',
+				description: 'R₁ = 0.1, X₁ = 0.21, R₂′ = 0.07, X₂′ = 0.21, Xₘ = 10 Ω, s = 0.05, mech. 500 W, core 400 W.',
 				input: {
 					model: 'exact-T',
 					connection: 'Y',

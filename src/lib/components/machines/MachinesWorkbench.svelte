@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Calculator, FileText, Search, X } from 'lucide-svelte';
-	import { Badge } from '$lib/components/ui';
+	import { Calculator, Check, ChevronDown, FileText, ListFilter, Search, X } from 'lucide-svelte';
+	import { Badge, Sheet } from '$lib/components/ui';
 	import {
 		MACHINE_CATEGORIES,
 		MACHINE_QUESTION_TYPES,
@@ -41,10 +41,10 @@
 	);
 	let searchQuery = $state('');
 	let mobilePane = $state<'inputs' | 'solution'>('inputs');
+	let topicsSheetOpen = $state(false);
 
 	const activeMeta = $derived(getQuestionTypeMeta(selectedTypeId));
 	const activeCategoryMeta = $derived(getCategoryMeta(selectedCategory));
-	const categoryQuestionTypes = $derived(getQuestionTypesByCategory(selectedCategory));
 
 	const filteredCategories = $derived.by(() => {
 		const q = searchQuery.trim().toLowerCase();
@@ -58,11 +58,11 @@
 			category: cat,
 			items: getQuestionTypesByCategory(cat.id).filter(
 				(item) =>
-					item.id.toLowerCase().includes(q) ||
 					item.title.toLowerCase().includes(q) ||
 					item.shortLabel.toLowerCase().includes(q) ||
 					cat.title.toLowerCase().includes(q) ||
-					cat.shortTitle.toLowerCase().includes(q)
+					cat.shortTitle.toLowerCase().includes(q) ||
+					cat.chapterLabel.toLowerCase().includes(q)
 			)
 		})).filter((group) => group.items.length > 0);
 	});
@@ -82,14 +82,6 @@
 		if (firstPreset) {
 			activePresetId = firstPreset.id;
 			inputState = cloneInput(firstPreset.input);
-		}
-	}
-
-	function selectCategory(cat: MachineCategory) {
-		selectedCategory = cat;
-		const types = getQuestionTypesByCategory(cat);
-		if (types.length > 0 && !types.some((t) => t.id === selectedTypeId)) {
-			selectQuestionType(types[0].id);
 		}
 	}
 
@@ -113,100 +105,43 @@
 	}
 </script>
 
-<div class={cn('flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background lg:flex-row', className)}>
-	<!-- Mobile & Tablet Compact Picker + Inputs/Solution Tabs (< lg) -->
-	<div class="flex shrink-0 flex-col border-b border-border bg-surface-rail lg:hidden">
-		<!-- Horizontal Category Pills -->
-		<div
-			role="tablist"
-			aria-label="Electrical machines topics"
-			class="no-scrollbar flex items-center gap-1.5 overflow-x-auto px-2.5 py-2 [-webkit-overflow-scrolling:touch]"
+<div
+	class={cn(
+		'relative flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-background lg:flex-row',
+		className
+	)}
+>
+	<!-- Compact Single-Row Mobile & Tablet Topic Trigger (< lg, 48px height) -->
+	<div class="flex h-12 shrink-0 items-center border-b border-border bg-surface-rail px-2.5 lg:hidden">
+		<button
+			type="button"
+			aria-label="Choose electrical machines topic"
+			aria-haspopup="dialog"
+			aria-expanded={topicsSheetOpen}
+			onclick={() => (topicsSheetOpen = true)}
+			class="flex min-h-10 w-full min-w-0 cursor-pointer items-center justify-between gap-2 rounded-[4px] border border-border bg-card px-2.5 text-left transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		>
-			{#each MACHINE_CATEGORIES as cat (cat.id)}
-				{@const active = selectedCategory === cat.id}
-				<button
-					type="button"
-					role="tab"
-					aria-selected={active}
-					onclick={() => selectCategory(cat.id)}
-					class={cn(
-						'inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-[4px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-						active
-							? 'border-primary/60 bg-primary/10 font-semibold text-foreground'
-							: 'border-border bg-card font-medium text-muted-foreground hover:text-foreground'
-					)}
-				>
-					<span>{cat.shortTitle}</span>
-				</button>
-			{/each}
-		</div>
-
-		<!-- Question Type Picker & Inputs/Solution Switcher -->
-		<div class="flex flex-col gap-2 border-t border-border/70 px-2.5 py-2 sm:flex-row sm:items-center">
-			<div class="min-w-0 flex-1">
-				<label for="mobile-machine-qt-select" class="sr-only">Select question type</label>
-				<select
-					id="mobile-machine-qt-select"
-					value={selectedTypeId}
-					onchange={(e) => selectQuestionType(e.currentTarget.value as MachineQuestionTypeId)}
-					class="min-h-11 w-full rounded-[4px] border border-input bg-card px-2.5 text-base font-medium text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-				>
-					{#each categoryQuestionTypes as qt (qt.id)}
-						<option value={qt.id}>{qt.id}: {qt.shortLabel}</option>
-					{/each}
-				</select>
+			<div class="flex min-w-0 items-center gap-1.5">
+				<span class="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-primary">
+					{activeCategoryMeta.shortTitle}
+				</span>
+				<span aria-hidden="true" class="shrink-0 text-muted-foreground/60">·</span>
+				<span class="truncate text-xs font-semibold text-foreground">
+					{activeMeta.shortLabel}
+				</span>
 			</div>
-
-			<div
-				role="tablist"
-				aria-label="Workbench view"
-				class="grid shrink-0 grid-cols-2 gap-1 rounded-[4px] border border-border bg-muted/80 p-0.5 sm:w-52"
-			>
-				<button
-					type="button"
-					role="tab"
-					aria-selected={mobilePane === 'inputs'}
-					onclick={() => (mobilePane = 'inputs')}
-					class={cn(
-						'inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-						mobilePane === 'inputs'
-							? 'border-border/90 bg-card font-semibold text-foreground'
-							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
-					)}
-				>
-					<FileText class="size-3.5" aria-hidden="true" />
-					<span>Inputs</span>
-				</button>
-				<button
-					type="button"
-					role="tab"
-					aria-selected={mobilePane === 'solution'}
-					onclick={() => (mobilePane = 'solution')}
-					class={cn(
-						'inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-						mobilePane === 'solution'
-							? 'border-border/90 bg-card font-semibold text-foreground'
-							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
-					)}
-				>
-					<Calculator class="size-3.5" aria-hidden="true" />
-					<span>Solution</span>
-					<span
-						class={cn(
-							'h-1.5 w-1.5 rounded-full',
-							solveResult.valid ? 'bg-branch-current' : 'bg-destructive'
-						)}
-						aria-hidden="true"
-					></span>
-				</button>
-			</div>
-		</div>
+			<span class="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
+				<ListFilter class="size-3.5" aria-hidden="true" />
+				<span>Topics</span>
+				<ChevronDown class="size-3.5" aria-hidden="true" />
+			</span>
+		</button>
 	</div>
 
-	<!-- Left Question-Type Navigator (Desktop lg+) -->
+	<!-- Left Topic Navigator (Desktop lg+) -->
 	<aside
-		aria-label="Electrical machines question types"
-		class="hidden w-64 shrink-0 flex-col border-r border-border bg-surface-rail lg:flex xl:w-72"
+		aria-label="Electrical machines topics"
+		class="relative hidden w-64 shrink-0 flex-col border-r border-border bg-surface-rail lg:flex xl:w-72"
 	>
 		<div class="border-b border-border p-2.5">
 			<div class="relative flex items-center">
@@ -216,8 +151,8 @@
 				/>
 				<input
 					type="search"
-					aria-label="Filter machine question types"
-					placeholder="Filter topics or QT code..."
+					aria-label="Search machines topics"
+					placeholder="Search machines topics..."
 					value={searchQuery}
 					oninput={(e) => (searchQuery = e.currentTarget.value)}
 					class="min-h-8 w-full rounded-[4px] border border-input bg-card pr-7 pl-8 text-sm text-foreground placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
@@ -225,7 +160,7 @@
 				{#if searchQuery}
 					<button
 						type="button"
-						aria-label="Clear filter"
+						aria-label="Clear search"
 						onclick={() => (searchQuery = '')}
 						class="absolute right-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-[3px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
@@ -235,10 +170,10 @@
 			</div>
 		</div>
 
-		<nav aria-label="Question type catalog" class="flex-1 overflow-y-auto p-2">
+		<nav aria-label="Machines topic catalog" class="flex-1 overflow-y-auto p-2">
 			{#if filteredCategories.length === 0}
 				<p class="px-2 py-4 text-center text-xs text-muted-foreground">
-					No matching machine question types.
+					No matching machine topics.
 				</p>
 			{:else}
 				<div class="flex flex-col gap-3">
@@ -259,27 +194,21 @@
 									aria-current={active ? 'page' : undefined}
 									onclick={() => selectQuestionType(qt.id)}
 									class={cn(
-										'flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-[4px] border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+										'flex w-full cursor-pointer items-center justify-between gap-2 rounded-[4px] border px-2.5 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 										active
 											? 'border-primary/50 bg-card text-foreground'
 											: 'border-transparent text-foreground/80 hover:bg-accent/70 hover:text-foreground'
 									)}
 								>
-									<div class="flex w-full items-center justify-between gap-1.5">
-										<span class="truncate text-xs font-semibold leading-tight">
-											{qt.shortLabel}
-										</span>
+									<span class="truncate text-xs font-semibold leading-tight">
+										{qt.shortLabel}
+									</span>
+									{#if active}
 										<span
-											class={cn(
-												'font-engineering shrink-0 rounded-[3px] px-1 py-0.5 text-[9px] font-medium',
-												active
-													? 'bg-primary/12 text-primary'
-													: 'bg-muted text-muted-foreground'
-											)}
-										>
-											{qt.id}
-										</span>
-									</div>
+											class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+											aria-hidden="true"
+										></span>
+									{/if}
 								</button>
 							{/each}
 						</div>
@@ -292,19 +221,19 @@
 	<!-- Center Schematic + Input Form -->
 	<main
 		class={cn(
-			'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background',
+			'relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-background',
 			mobilePane === 'inputs' ? 'flex' : 'hidden lg:flex'
 		)}
 	>
-		<div class="mx-auto flex w-full max-w-3xl flex-col gap-4 p-3 sm:p-4 lg:p-5">
-			<!-- Question Type Header -->
-			<div class="flex flex-col gap-1 border-b border-border pb-3">
-				<div class="flex flex-wrap items-center gap-2">
+		<div class="mx-auto flex w-full max-w-3xl flex-col gap-3 p-3 sm:gap-4 sm:p-4 lg:p-5">
+			<!-- Topic Header -->
+			<div class="flex flex-col gap-1 border-b border-border pb-2.5 sm:pb-3">
+				<div class="flex flex-wrap items-center gap-1.5">
 					<Badge variant="outline" class="font-engineering text-[10px]">
 						{activeCategoryMeta.chapterLabel}
 					</Badge>
-					<Badge variant="secondary" class="font-engineering text-[10px]">
-						{activeMeta.id}
+					<Badge variant="secondary" class="text-[10px]">
+						{activeCategoryMeta.shortTitle}
 					</Badge>
 				</div>
 				<h1 class="text-base font-semibold tracking-tight text-foreground sm:text-lg">
@@ -333,10 +262,151 @@
 	<aside
 		aria-label="Machine solution panel"
 		class={cn(
-			'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-card lg:w-[420px] lg:flex-none lg:shrink-0 lg:border-l lg:border-border xl:w-[460px]',
+			'relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-card lg:w-[420px] lg:flex-none lg:shrink-0 lg:border-l lg:border-border xl:w-[460px]',
 			mobilePane === 'solution' ? 'flex' : 'hidden lg:flex'
 		)}
 	>
 		<MachineSolutionPanel result={solveResult} meta={activeMeta} />
 	</aside>
+
+	<!-- Slim Mobile & Tablet Bottom Navigation Bar (< lg, 52px) -->
+	<nav
+		aria-label="Machines workspace navigation"
+		class="flex shrink-0 border-t border-border bg-surface-rail pb-safe lg:hidden"
+	>
+		<button
+			type="button"
+			aria-current={mobilePane === 'inputs' ? 'page' : undefined}
+			onclick={() => (mobilePane = 'inputs')}
+			class={cn(
+				'relative flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 px-2 py-1.5 text-[11px] transition-colors duration-150',
+				'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+				mobilePane === 'inputs'
+					? 'font-semibold text-foreground'
+					: 'font-medium text-muted-foreground hover:text-foreground'
+			)}
+		>
+			{#if mobilePane === 'inputs'}
+				<span
+					class="absolute top-0 right-4 left-4 h-0.5 bg-primary"
+					aria-hidden="true"
+				></span>
+			{/if}
+			<FileText class="size-4" aria-hidden="true" />
+			<span>Inputs</span>
+		</button>
+
+		<button
+			type="button"
+			aria-current={mobilePane === 'solution' ? 'page' : undefined}
+			onclick={() => (mobilePane = 'solution')}
+			class={cn(
+				'relative flex min-h-[52px] flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 px-2 py-1.5 text-[11px] transition-colors duration-150',
+				'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+				mobilePane === 'solution'
+					? 'font-semibold text-foreground'
+					: 'font-medium text-muted-foreground hover:text-foreground'
+			)}
+		>
+			{#if mobilePane === 'solution'}
+				<span
+					class="absolute top-0 right-4 left-4 h-0.5 bg-primary"
+					aria-hidden="true"
+				></span>
+			{/if}
+			<span class="relative inline-flex items-center justify-center">
+				<Calculator class="size-4" aria-hidden="true" />
+				<span
+					class={cn(
+						'absolute -top-0.5 -right-1.5 h-2 w-2 rounded-full ring-1 ring-surface-rail',
+						solveResult.valid ? 'bg-branch-current' : 'bg-destructive'
+					)}
+					aria-hidden="true"
+				></span>
+			</span>
+			<span>Solution</span>
+		</button>
+	</nav>
 </div>
+
+<!-- Mobile & Tablet Topics Picker Sheet -->
+<Sheet
+	bind:open={topicsSheetOpen}
+	side="bottom"
+	title="Electrical Machines Topics"
+	description="Select a chapter and problem type."
+>
+	<div class="flex flex-col gap-3 p-3">
+		<div class="relative flex items-center">
+			<Search
+				class="pointer-events-none absolute left-2.5 size-4 text-muted-foreground"
+				aria-hidden="true"
+			/>
+			<input
+				type="search"
+				aria-label="Search machines topics"
+				placeholder="Search machines topics..."
+				value={searchQuery}
+				oninput={(e) => (searchQuery = e.currentTarget.value)}
+				class="min-h-11 w-full rounded-[4px] border border-input bg-card pr-8 pl-9 text-base text-foreground placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+			/>
+			{#if searchQuery}
+				<button
+					type="button"
+					aria-label="Clear search"
+					onclick={() => (searchQuery = '')}
+					class="absolute right-1.5 inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-[3px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<X class="size-4" aria-hidden="true" />
+				</button>
+			{/if}
+		</div>
+
+		{#if filteredCategories.length === 0}
+			<p class="px-2 py-6 text-center text-xs text-muted-foreground">
+				No matching machine topics.
+			</p>
+		{:else}
+			<div class="flex flex-col gap-3.5 pb-2">
+				{#each filteredCategories as group (group.category.id)}
+					<div class="flex flex-col gap-1">
+						<div class="flex items-center justify-between gap-2 px-1.5 py-0.5">
+							<span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+								{group.category.shortTitle}
+							</span>
+							<span class="font-engineering text-[11px] text-muted-foreground/80">
+								{group.category.chapterLabel}
+							</span>
+						</div>
+						<div class="flex flex-col gap-1">
+							{#each group.items as qt (qt.id)}
+								{@const active = selectedTypeId === qt.id}
+								<button
+									type="button"
+									aria-current={active ? 'page' : undefined}
+									onclick={() => {
+										selectQuestionType(qt.id);
+										topicsSheetOpen = false;
+									}}
+									class={cn(
+										'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[4px] border px-3 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+										active
+											? 'border-primary/50 bg-primary/8 text-foreground'
+											: 'border-border/70 bg-card text-foreground/85 hover:bg-accent/70 hover:text-foreground'
+									)}
+								>
+									<span class="text-sm font-medium leading-tight">
+										{qt.shortLabel}
+									</span>
+									{#if active}
+										<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
+									{/if}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+</Sheet>

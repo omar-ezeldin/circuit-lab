@@ -306,7 +306,7 @@
 	</div>
 
 	{#if formMode === 'pure'}
-		<div class="flex flex-col gap-1">
+		<div class="relative flex flex-col gap-1">
 			<label for={`${idPrefix}-pure`} class="sr-only">
 				{kind === 'inductor' ? 'Inductive reactance magnitude' : 'Capacitive reactance magnitude'}
 			</label>

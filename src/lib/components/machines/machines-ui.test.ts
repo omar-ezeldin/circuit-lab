@@ -19,27 +19,45 @@ function escapeHtml(text: string): string {
 	return text.replace(/&/g, '&amp;');
 }
 
+function stripTags(html: string): string {
+	return html
+		.replace(/<annotation\b[^>]*>[\s\S]*?<\/annotation>/gi, ' ')
+		.replace(/<[^>]+>/g, ' ');
+}
+
 describe('Machines UI Components', () => {
-	it('renders MachinesWorkbench default state (QT-XFMR-2) with live solution and zero KaTeX errors', () => {
+	it('renders MachinesWorkbench default state (OC & SC Tests) with plain-English UI, live solution, and zero KaTeX errors', () => {
 		const { body } = render(MachinesWorkbench);
-		expect(body).toContain('QT-XFMR-2');
+		const visibleText = stripTags(body);
+
+		expect(body).toContain('OC &amp; SC Tests');
 		expect(body).toContain('Course Examples');
 		expect(body).toContain('Final Answers');
 		expect(body).toContain('Step-by-Step Derivation');
 		expect(body).toContain('Key Formulas');
 		expect(body).toContain('class="katex"');
 		expect(body).not.toContain('katex-error');
+
+		// Internal QT-* codes must never leak into visible UI text
+		expect(visibleText).not.toContain('QT-XFMR-2');
+		expect(visibleText).not.toContain('QT-3PH-1');
+		expect(visibleText).not.toMatch(/\bQT-[A-Z0-9]+-\d+\b/);
 	});
 
-	it('renders MachinesWorkbench across all 14 question types with valid answers and zero KaTeX errors', () => {
+	it('renders MachinesWorkbench across all 14 topics with plain-English labels, valid answers, and zero KaTeX errors', () => {
 		for (const qtId of ALL_QUESTION_TYPES) {
 			const meta = MACHINE_QUESTION_TYPES[qtId];
 			const { body } = render(MachinesWorkbench, {
 				props: { initialQuestionTypeId: qtId }
 			});
+			const visibleText = stripTags(body);
 
-			expect(body, `${qtId} should render its code`).toContain(qtId);
-			expect(body, `${qtId} should render its title`).toContain(escapeHtml(meta.title));
+			expect(visibleText, `${qtId} must not expose internal QT code`).not.toContain(qtId);
+			expect(visibleText, `${qtId} must not expose any QT-* code`).not.toMatch(/\bQT-[A-Z0-9]+-\d+\b/);
+			expect(body, `${qtId} should render its plain-English title`).toContain(escapeHtml(meta.title));
+			expect(body, `${qtId} should render its plain-English short label`).toContain(
+				escapeHtml(meta.shortLabel)
+			);
 			expect(body, `${qtId} should render first preset label`).toContain(
 				escapeHtml(meta.presets[0].label)
 			);
@@ -47,6 +65,10 @@ describe('Machines UI Components', () => {
 			expect(body, `${qtId} must have zero KaTeX parse errors`).not.toContain('katex-error');
 			expect(body, `${qtId} should not show invalid error banner for preset`).not.toContain(
 				'Invalid Parameter Combination'
+			);
+			// Ensure no raw ASCII underscore variable names leak into visible text (excluding KaTeX annotations)
+			expect(visibleText, `${qtId} must not render raw ASCII underscores in labels`).not.toMatch(
+				/\b[A-Za-zμΦη]_[A-Za-z0-9φ]+\b/
 			);
 		}
 	});
@@ -104,6 +126,7 @@ describe('Machines UI Components', () => {
 
 		expect(body).toContain('role="alert"');
 		expect(body).toContain('Invalid Parameter Combination');
+		expect(body).not.toContain('QT-3PH-1');
 		expect(body).not.toContain('katex-error');
 	});
 });

@@ -8,6 +8,7 @@
 		Check,
 		ChevronDown,
 		CircuitBoard,
+		Cog,
 		Eraser,
 		FileCode2,
 		Link2,
@@ -70,6 +71,7 @@
 	let paletteSheetOpen = $state(false);
 	let mobileMenuOpen = $state(false);
 	let freqPopoverOpen = $state(false);
+	let workspaceMenuOpen = $state(false);
 
 	let presetsOpen = $state(false);
 	let jsonOpen = $state(false);
@@ -149,6 +151,7 @@
 		if (e.key === 'Escape') {
 			if (mobileMenuOpen) mobileMenuOpen = false;
 			if (freqPopoverOpen) freqPopoverOpen = false;
+			if (workspaceMenuOpen) workspaceMenuOpen = false;
 		}
 	}
 
@@ -310,7 +313,7 @@
 	<title>{`${IS_STAGING ? '[Staging] ' : ''}${workspaceMode === 'machines' ? 'Electrical Machines — Circuit Lab' : circuit.document.name?.trim() ? `${circuit.document.name.trim()} — Circuit Lab` : 'Circuit Lab'}`}</title>
 </svelte:head>
 
-<div class="flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground">
+<div class="relative flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground">
 	<!-- Top Toolbar -->
 	<header class="flex h-12 shrink-0 items-center justify-between gap-1 border-b border-border bg-surface-rail px-2 sm:gap-1.5 sm:px-3 lg:h-11 lg:gap-2">
 		<!-- Left: Rail Toggle, Brand, Workspace Switcher, Mode & Telemetry -->
@@ -354,7 +357,7 @@
 					<circle cx="3" cy="12" r="1.4" fill="currentColor" stroke="none" />
 					<circle cx="21" cy="12" r="1.4" fill="currentColor" stroke="none" />
 				</svg>
-				<span class="shrink-0 whitespace-nowrap text-[13px] font-semibold tracking-tight text-foreground">
+				<span class="hidden shrink-0 whitespace-nowrap text-[13px] font-semibold tracking-tight text-foreground sm:inline">
 					Circuit Lab
 				</span>
 				{#if IS_STAGING}
@@ -376,9 +379,32 @@
 				{/if}
 			</div>
 
+			<!-- Compact Mobile Workspace Switcher (< sm) right inside the single 48px header -->
+			<button
+				type="button"
+				aria-label="Switch workspace mode"
+				aria-haspopup="menu"
+				aria-expanded={workspaceMenuOpen}
+				onclick={() => {
+					mobileMenuOpen = false;
+					freqPopoverOpen = false;
+					workspaceMenuOpen = !workspaceMenuOpen;
+				}}
+				class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-[4px] border border-border bg-card px-2 text-xs font-semibold text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:hidden"
+			>
+				<span>{workspaceMode === 'machines' ? 'Machines' : 'Circuits'}</span>
+				<ChevronDown
+					class={cn(
+						'size-3 shrink-0 text-muted-foreground transition-transform duration-150',
+						workspaceMenuOpen && 'rotate-180'
+					)}
+					aria-hidden="true"
+				/>
+			</button>
+
 			<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
 
-			<!-- Top-Level Workspace Switcher: Circuits | Machines (sm+; mobile uses slim bar below header) -->
+			<!-- Top-Level Workspace Switcher: Circuits | Machines (sm+) -->
 			<div
 				role="radiogroup"
 				aria-label="Workspace mode"
@@ -494,6 +520,7 @@
 						aria-haspopup="dialog"
 						onclick={() => {
 							mobileMenuOpen = false;
+							workspaceMenuOpen = false;
 							freqPopoverOpen = !freqPopoverOpen;
 						}}
 						class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-input bg-card px-1.5 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
@@ -679,6 +706,7 @@
 					aria-expanded={mobileMenuOpen}
 					onclick={() => {
 						freqPopoverOpen = false;
+						workspaceMenuOpen = false;
 						mobileMenuOpen = !mobileMenuOpen;
 					}}
 				>
@@ -710,45 +738,70 @@
 		</div>
 	</header>
 
-	<!-- Mobile Workspace Switcher Bar (< sm) — preserves 360px header budget in AC mode -->
-	<div
-		role="radiogroup"
-		aria-label="Workspace mode"
-		class="grid shrink-0 grid-cols-2 gap-1 border-b border-border bg-surface-rail px-2 py-1.5 sm:hidden"
-	>
+	<!-- Mobile Workspace Switcher Popover (< sm) -->
+	{#if workspaceMenuOpen}
 		<button
 			type="button"
-			role="radio"
-			aria-checked={workspaceMode === 'circuits'}
-			onclick={() => (workspaceMode = 'circuits')}
-			class={cn(
-				'inline-flex min-h-11 cursor-pointer items-center justify-center rounded-[4px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-				workspaceMode === 'circuits'
-					? 'border-border/90 bg-card font-semibold text-foreground'
-					: 'border-transparent bg-muted/70 font-medium text-muted-foreground hover:text-foreground'
-			)}
+			tabindex="-1"
+			aria-label="Close workspace switcher"
+			onclick={() => (workspaceMenuOpen = false)}
+			class="fixed inset-0 z-40 cursor-default bg-transparent sm:hidden"
+		></button>
+		<div
+			role="menu"
+			aria-label="Workspace mode"
+			class="fixed top-[52px] left-2 z-50 flex w-48 flex-col gap-0.5 rounded-[4px] border border-border bg-popover p-1.5 text-popover-foreground shadow-lg sm:hidden"
 		>
-			Circuits
-		</button>
-		<button
-			type="button"
-			role="radio"
-			aria-checked={workspaceMode === 'machines'}
-			onclick={() => {
-				workspaceMode = 'machines';
-				mobileMenuOpen = false;
-				freqPopoverOpen = false;
-			}}
-			class={cn(
-				'inline-flex min-h-11 cursor-pointer items-center justify-center rounded-[4px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-				workspaceMode === 'machines'
-					? 'border-border/90 bg-card font-semibold text-foreground'
-					: 'border-transparent bg-muted/70 font-medium text-muted-foreground hover:text-foreground'
-			)}
-		>
-			Machines
-		</button>
-	</div>
+			<button
+				type="button"
+				role="menuitemradio"
+				aria-checked={workspaceMode === 'circuits'}
+				onclick={() => {
+					workspaceMode = 'circuits';
+					workspaceMenuOpen = false;
+				}}
+				class={cn(
+					'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[4px] px-3 py-2 text-left text-sm transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+					workspaceMode === 'circuits'
+						? 'bg-accent/60 font-semibold text-foreground'
+						: 'font-medium text-foreground/85'
+				)}
+			>
+				<span class="flex items-center gap-2">
+					<CircuitBoard class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+					<span>Circuits</span>
+				</span>
+				{#if workspaceMode === 'circuits'}
+					<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
+				{/if}
+			</button>
+			<button
+				type="button"
+				role="menuitemradio"
+				aria-checked={workspaceMode === 'machines'}
+				onclick={() => {
+					workspaceMode = 'machines';
+					workspaceMenuOpen = false;
+					mobileMenuOpen = false;
+					freqPopoverOpen = false;
+				}}
+				class={cn(
+					'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[4px] px-3 py-2 text-left text-sm transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+					workspaceMode === 'machines'
+						? 'bg-accent/60 font-semibold text-foreground'
+						: 'font-medium text-foreground/85'
+				)}
+			>
+				<span class="flex items-center gap-2">
+					<Cog class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+					<span>Machines</span>
+				</span>
+				{#if workspaceMode === 'machines'}
+					<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
+				{/if}
+			</button>
+		</div>
+	{/if}
 
 	{#if workspaceMode === 'machines'}
 		<MachinesWorkbench />
