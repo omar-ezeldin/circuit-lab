@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { RotateCcw } from 'lucide-svelte';
+	import { Check, Download, RotateCcw, Share } from 'lucide-svelte';
 	import { CircuitSymbol } from '$lib/components/symbols';
-	import { Button, Dialog, Label, Separator, Switch } from '$lib/components/ui';
+	import { Badge, Button, Dialog, Label, Separator, Switch } from '$lib/components/ui';
 	import { UNIT_SYSTEMS } from '$lib/engine';
 	import { AC_ENABLED } from '$lib/env';
+	import { pwa } from '$lib/stores/pwa.svelte';
 	import {
 		settings,
 		type AcMagnitudeMode,
@@ -285,6 +286,54 @@
 					checked={settings.showLiveOverlays}
 					onCheckedChange={(v) => (settings.showLiveOverlays = v)}
 				/>
+			</div>
+		</section>
+
+		<Separator />
+
+		<!-- Install App (PWA) -->
+		<section class="flex flex-col gap-2">
+			<Label>Install App</Label>
+			<div class="flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-[4px] border border-border bg-background/50 px-3 py-2.5">
+				<div class="flex min-w-0 flex-col gap-0.5">
+					<span class="text-xs font-semibold text-foreground">Circuit Lab Offline Workbench</span>
+					{#if pwa.isInstalled}
+						<span class="text-[11px] text-muted-foreground">
+							Running as an installed standalone application with offline support.
+						</span>
+					{:else if pwa.canInstall}
+						<span class="text-[11px] text-muted-foreground">
+							Install on your device for instant launch and full offline solving.
+						</span>
+					{:else if pwa.isIosSafari}
+						<span class="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+							<Share class="size-3 shrink-0" aria-hidden="true" />
+							<span>Tap Share → Add to Home Screen</span>
+						</span>
+					{:else}
+						<span class="text-[11px] text-muted-foreground">
+							Offline-ready. Use your browser menu to install on supported devices.
+						</span>
+					{/if}
+				</div>
+
+				{#if pwa.isInstalled}
+					<Badge variant="success" class="shrink-0 gap-1">
+						<Check class="size-3" aria-hidden="true" />
+						<span>Installed</span>
+					</Badge>
+				{:else if pwa.canInstall}
+					<Button
+						variant="default"
+						size="sm"
+						disabled={pwa.installing}
+						onclick={() => void pwa.promptInstall()}
+						class="min-h-11 shrink-0 sm:min-h-0"
+					>
+						<Download class="size-3.5" aria-hidden="true" />
+						<span>{pwa.installing ? 'Installing…' : 'Install Circuit Lab'}</span>
+					</Button>
+				{/if}
 			</div>
 		</section>
 	</div>

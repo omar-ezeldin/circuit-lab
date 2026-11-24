@@ -4,11 +4,17 @@
 	import '../app.css';
 	import 'katex/dist/katex.min.css';
 	import { ModeWatcher } from 'mode-watcher';
+	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { IS_STAGING } from '$lib/env';
+	import { initPwaInstallListener } from '$lib/stores/pwa.svelte';
 	import AnalyticsConsent from '$lib/components/consent/AnalyticsConsent.svelte';
 
 	let { children }: { children: Snippet } = $props();
+
+	onMount(() => {
+		return initPwaInstallListener();
+	});
 </script>
 
 <svelte:head>

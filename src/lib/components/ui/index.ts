@@ -26,3 +26,4 @@ export { default as Accordion, type AccordionVariant } from './Accordion.svelte'
 export { default as AccordionItem } from './AccordionItem.svelte';
 export { default as Tooltip } from './Tooltip.svelte';
 export { default as Sheet } from './Sheet.svelte';
+export { default as BrandMark } from './BrandMark.svelte';

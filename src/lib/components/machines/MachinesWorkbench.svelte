@@ -302,7 +302,7 @@
 	<!-- Slim Mobile & Tablet Bottom Navigation Bar (< lg, 52px) -->
 	<nav
 		aria-label="Machines workspace navigation"
-		class="flex shrink-0 border-t border-border bg-surface-rail pb-safe lg:hidden"
+		class="flex shrink-0 border-t border-border bg-surface-rail pb-[env(safe-area-inset-bottom)] lg:hidden"
 	>
 		<button
 			type="button"

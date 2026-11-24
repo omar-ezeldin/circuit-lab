@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="cl-tile-bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#141923" />
+      <stop offset="100%" stop-color="#0D1017" />
+    </linearGradient>
+    <linearGradient id="cl-trace-grad" x1="96" y1="248" x2="416" y2="248" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3B82F6" />
+      <stop offset="50%" stop-color="#60A5FA" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+  </defs>
+
+  <!-- Anodized Dark Drafting Tile -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#cl-tile-bg)" />
+  <rect x="17.5" y="17.5" width="477" height="477" rx="106.5" fill="none" stroke="#263042" stroke-width="3" />
+
+  <!-- Subtle Inner Hairline Engineering Frame -->
+  <rect x="44" y="44" width="424" height="424" rx="82" fill="none" stroke="#1E2738" stroke-width="2" />
+
+  <!-- Precision Corner Registration Ticks -->
+  <g stroke="#334155" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.85">
+    <path d="M 96 112 V 96 H 112" />
+    <path d="M 400 96 H 416 V 112" />
+    <path d="M 96 400 V 416 H 112" />
+    <path d="M 400 416 H 416 V 400" />
+  </g>
+
+  <!-- Cardinal Axis Hairline Ticks -->
+  <g stroke="#293548" stroke-width="2.5" stroke-linecap="round">
+    <line x1="256" y1="60" x2="256" y2="76" />
+    <line x1="256" y1="436" x2="256" y2="452" />
+    <line x1="60" y1="248" x2="72" y2="248" />
+    <line x1="440" y1="248" x2="452" y2="248" />
+  </g>
+
+  <!-- Subtle Reference Datum / Ground Accent (bottom center) -->
+  <g stroke="#64748B" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.72">
+    <line x1="256" y1="340" x2="256" y2="366" />
+    <line x1="226" y1="366" x2="286" y2="366" />
+    <line x1="236" y1="382" x2="276" y2="382" />
+    <line x1="246" y1="398" x2="266" y2="398" />
+  </g>
+
+  <!-- Precision IEEE 3-Peak Resistor Trace -->
+  <path
+    d="M 118 248 H 154 L 171 196 L 205 300 L 239 196 L 273 300 L 307 196 L 341 300 L 358 248 H 394"
+    fill="none"
+    stroke="url(#cl-trace-grad)"
+    stroke-width="22"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Input & Output Precision Terminal Nodes -->
+  <g>
+    <circle cx="98" cy="248" r="22" fill="#0F141D" stroke="#F8FAFC" stroke-width="11" />
+    <circle cx="98" cy="248" r="6.5" fill="#3B82F6" />
+
+    <circle cx="414" cy="248" r="22" fill="#0F141D" stroke="#F8FAFC" stroke-width="11" />
+    <circle cx="414" cy="248" r="6.5" fill="#3B82F6" />
+  </g>
+</svg>
