@@ -30,6 +30,10 @@ export const handle: Handle = ({ event, resolve }) =>
 				transformed = transformed
 					.replace('<title>', '<title>[Staging] ')
 					.replace(
+						'property="og:title" content="',
+						'property="og:title" content="[Staging] '
+					)
+					.replace(
 						'</head>',
 						'\t\t<meta name="robots" content="noindex, nofollow" />\n\t</head>'
 					);

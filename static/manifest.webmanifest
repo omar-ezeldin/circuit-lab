@@ -1,7 +1,7 @@
 {
 	"name": "Circuit Lab",
 	"short_name": "Circuit Lab",
-	"description": "Interactive DC & AC circuit analysis workbench with live schematic solving, phasor diagrams, and electrical machines.",
+	"description": "Interactive DC & AC circuit schematic builder and real-time solver with phasor diagrams, Thévenin equivalents, and unknown solver.",
 	"start_url": "./",
 	"scope": "./",
 	"display": "standalone",
