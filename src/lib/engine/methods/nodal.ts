@@ -35,6 +35,7 @@ import {
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveAdmittance,
+	getRedundantSourceInapplicableReason,
 	latexSub,
 	verifyAgainstMna
 } from './shared';
@@ -83,6 +84,17 @@ export function solveNodal(doc: CircuitDocument, mna: MnaSolution): MethodResult
 			title,
 			applicable: false,
 			inapplicableReason: 'Circuit has topology or value errors; fix validation errors first.',
+			steps: []
+		};
+	}
+
+	const redundantReason = getRedundantSourceInapplicableReason(mna);
+	if (redundantReason) {
+		return {
+			methodId: 'nodal',
+			title,
+			applicable: false,
+			inapplicableReason: redundantReason,
 			steps: []
 		};
 	}

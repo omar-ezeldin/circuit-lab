@@ -713,6 +713,480 @@ export function getPassiveImpedance(
 	}
 }
 
+export interface RedundantVoltageCycleEdge {
+	compId: string;
+	sign: 1 | -1;
+}
+
+export interface RedundantVoltageBranch {
+	comp: CircuitComponent;
+	nodeA: string;
+	nodeB: string;
+	/** Fundamental cycle edges satisfying sum(sign * I_compId) = 0 */
+	cycleEdges: RedundantVoltageCycleEdge[];
+	/** Labels of tree branches along the path forming the consistent loop */
+	loopLabels: string[];
+}
+
+export interface VoltageSourceLoopAnalysis {
+	/** Map of KVL-consistent redundant branch compId -> cycle symmetry constraint */
+	redundantBranches: Map<string, RedundantVoltageBranch>;
+	diagnostics: ValidationDiagnostic[];
+}
+
+/**
+ * Analyzes ideal zero-impedance branches (independent voltage sources, DC shorted inductors,
+ * and dependent voltage sources) for KVL-consistent redundant loops vs conflicting loops.
+ *
+ * - Independent voltage sources (and DC inductors as 0 V) are inserted into a spanning forest
+ *   tracking relative complex node potentials. If a branch closes a cycle whose KVL sum matches
+ *   within tolerance, it is recorded as a KVL-consistent redundant branch with its fundamental
+ *   cycle symmetry equation and a `REDUNDANT_VOLTAGE_SOURCE` warning; otherwise a
+ *   `VOLTAGE_SOURCE_LOOP` error is emitted.
+ * - Dependent voltage sources (VCVS/CCVS) closing a zero-impedance cycle or self-shorting
+ *   still emit a `VOLTAGE_SOURCE_LOOP` error.
+ */
+export function analyzeVoltageSourceLoops(
+	graph: ElectricalGraph,
+	mode: AnalysisMode
+): VoltageSourceLoopAnalysis {
+	const { doc, nodes, componentNodes } = graph;
+	const activeComponents = doc.components.filter(
+		(c) => c.kind !== 'ground' && c.kind !== 'terminal' && c.kind !== 'voltmeter'
+	);
+
+	const allNodeIds = Object.keys(nodes);
+	const nodeIdx = new Map<string, number>();
+	allNodeIds.forEach((id, i) => nodeIdx.set(id, i));
+
+	const ufZero = new UnionFind(allNodeIds.length);
+	const pot = new Map<string, Complex>();
+	const treeAdj = new Map<string, Array<{ comp: CircuitComponent; other: string; dir: 1 | -1 }>>();
+	for (const id of allNodeIds) {
+		pot.set(id, Complex.zero());
+		treeAdj.set(id, []);
+	}
+
+	const redundantBranches = new Map<string, RedundantVoltageBranch>();
+	const diagnostics: ValidationDiagnostic[] = [];
+
+	const shiftComponentPotentials = (startNode: string, delta: Complex): void => {
+		const visited = new Set<string>([startNode]);
+		const queue = [startNode];
+		while (queue.length > 0) {
+			const u = queue.shift()!;
+			pot.set(u, pot.get(u)!.add(delta));
+			for (const edge of treeAdj.get(u) ?? []) {
+				if (!visited.has(edge.other)) {
+					visited.add(edge.other);
+					queue.push(edge.other);
+				}
+			}
+		}
+	};
+
+	const findTreePath = (
+		startNode: string,
+		endNode: string
+	): Array<{ comp: CircuitComponent; dir: 1 | -1 }> | null => {
+		const visited = new Set<string>([startNode]);
+		const parent = new Map<string, { prev: string; comp: CircuitComponent; dir: 1 | -1 }>();
+		const queue = [startNode];
+		let found = false;
+
+		while (queue.length > 0) {
+			const u = queue.shift()!;
+			if (u === endNode) {
+				found = true;
+				break;
+			}
+			for (const edge of treeAdj.get(u) ?? []) {
+				if (!visited.has(edge.other)) {
+					visited.add(edge.other);
+					parent.set(edge.other, { prev: u, comp: edge.comp, dir: edge.dir });
+					queue.push(edge.other);
+				}
+			}
+		}
+
+		if (!found) return null;
+
+		const path: Array<{ comp: CircuitComponent; dir: 1 | -1 }> = [];
+		let cur = endNode;
+		while (cur !== startNode) {
+			const step = parent.get(cur)!;
+			path.push({ comp: step.comp, dir: step.dir });
+			cur = step.prev;
+		}
+		path.reverse();
+		return path;
+	};
+
+	const indepZeroBranches = activeComponents.filter(
+		(c) => c.kind === 'voltage_source' || (mode === 'dc' && c.kind === 'inductor')
+	);
+
+	for (const zb of indepZeroBranches) {
+		const [nA, nB] = componentNodes[zb.id] ?? [];
+		if (!nA || !nB) continue;
+
+		let v: Complex;
+		if (zb.kind === 'voltage_source') {
+			const parsed = parseSourceValue(zb, mode);
+			if (!parsed) continue;
+			v = parsed;
+		} else {
+			v = Complex.zero();
+		}
+
+		const iA = nodeIdx.get(nA)!;
+		const iB = nodeIdx.get(nB)!;
+
+		if (nA === nB) {
+			// Keep existing DC inductor self-short check intact (emitted during component validation)
+			if (zb.kind === 'inductor') continue;
+			if (v.abs() > 1e-9) {
+				diagnostics.push({
+					severity: 'error',
+					code: 'VOLTAGE_SOURCE_LOOP',
+					message: `Voltage source ${zb.label} is shorted across node ${nA}.`,
+					componentIds: [zb.id],
+					nodeIds: [nA]
+				});
+			} else {
+				redundantBranches.set(zb.id, {
+					comp: zb,
+					nodeA: nA,
+					nodeB: nB,
+					cycleEdges: [{ compId: zb.id, sign: 1 }],
+					loopLabels: []
+				});
+				diagnostics.push({
+					severity: 'warning',
+					code: 'REDUNDANT_VOLTAGE_SOURCE',
+					message: `${zb.label} is a 0 V source shorted across node ${nA} (KVL-consistent; current set to 0 A).`,
+					componentIds: [zb.id],
+					nodeIds: [nA]
+				});
+			}
+			continue;
+		}
+
+		if (ufZero.connected(iA, iB)) {
+			const vTree = pot.get(nA)!.sub(pot.get(nB)!);
+			const tol = 1e-9 * Math.max(1, vTree.abs(), v.abs());
+			if (vTree.sub(v).abs() > tol) {
+				diagnostics.push({
+					severity: 'error',
+					code: 'VOLTAGE_SOURCE_LOOP',
+					message: `Ideal voltage-source / DC-inductor loop detected involving ${zb.label} between ${nA} and ${nB} (conflicting KVL voltages).`,
+					componentIds: [zb.id],
+					nodeIds: [nA, nB]
+				});
+			} else {
+				const treePath = findTreePath(nA, nB) ?? [];
+				const cycleEdges: RedundantVoltageCycleEdge[] = [
+					...treePath.map((step) => ({ compId: step.comp.id, sign: step.dir })),
+					{ compId: zb.id, sign: -1 as const }
+				];
+				const loopLabels = treePath.map((step) => step.comp.label);
+				redundantBranches.set(zb.id, {
+					comp: zb,
+					nodeA: nA,
+					nodeB: nB,
+					cycleEdges,
+					loopLabels
+				});
+				diagnostics.push({
+					severity: 'warning',
+					code: 'REDUNDANT_VOLTAGE_SOURCE',
+					message: `${zb.label} is KVL-consistent with parallel/loop voltage source(s) (${loopLabels.join(', ')}) and shares current equally by symmetry.`,
+					componentIds: [zb.id, ...treePath.map((s) => s.comp.id)],
+					nodeIds: [nA, nB]
+				});
+			}
+		} else {
+			// Shift component of nB so pot[nA] - pot[nB] = v holds across the merged tree
+			const delta = pot.get(nA)!.sub(pot.get(nB)!).sub(v);
+			if (!delta.isZero(1e-18)) {
+				shiftComponentPotentials(nB, delta);
+			}
+			treeAdj.get(nA)!.push({ comp: zb, other: nB, dir: 1 });
+			treeAdj.get(nB)!.push({ comp: zb, other: nA, dir: -1 });
+			ufZero.union(iA, iB);
+		}
+	}
+
+	// Process dependent voltage sources (VCVS, CCVS) afterward against the spanning forest
+	const depZeroBranches = activeComponents.filter((c) => isDependentVoltageSource(c.kind));
+	for (const zb of depZeroBranches) {
+		const [nA, nB] = componentNodes[zb.id] ?? [];
+		if (!nA || !nB) continue;
+		const iA = nodeIdx.get(nA)!;
+		const iB = nodeIdx.get(nB)!;
+		if (nA === nB) {
+			diagnostics.push({
+				severity: 'error',
+				code: 'VOLTAGE_SOURCE_LOOP',
+				message: `Voltage source ${zb.label} is shorted across node ${nA}.`,
+				componentIds: [zb.id],
+				nodeIds: [nA]
+			});
+		} else if (ufZero.connected(iA, iB)) {
+			diagnostics.push({
+				severity: 'error',
+				code: 'VOLTAGE_SOURCE_LOOP',
+				message: `Ideal voltage-source / DC-inductor loop detected involving ${zb.label} between ${nA} and ${nB}.`,
+				componentIds: [zb.id],
+				nodeIds: [nA, nB]
+			});
+		} else {
+			ufZero.union(iA, iB);
+		}
+	}
+
+	return { redundantBranches, diagnostics };
+}
+
+export interface ConsistentCurrentCluster {
+	nodes: string[];
+	sourceIds: string[];
+	sourceLabels: string[];
+}
+
+export interface CurrentSourceCutsetAnalysis {
+	/** Isolated clusters formed exclusively by KCL-consistent series independent current sources */
+	consistentClusters: ConsistentCurrentCluster[];
+	diagnostics: ValidationDiagnostic[];
+}
+
+/**
+ * Analyzes conducting connectivity (excluding current sources and DC open capacitors)
+ * to distinguish floating subcircuits, genuine current-source cutset conflicts, and
+ * KCL-consistent series independent current-source clusters connected to the main circuit.
+ */
+export function analyzeCurrentSourceCutsets(
+	graph: ElectricalGraph,
+	mode: AnalysisMode
+): CurrentSourceCutsetAnalysis {
+	const { doc, nodes, componentNodes } = graph;
+	const activeComponents = doc.components.filter(
+		(c) => c.kind !== 'ground' && c.kind !== 'terminal' && c.kind !== 'voltmeter'
+	);
+
+	const allNodeIds = Object.keys(nodes);
+	const nodeIdx = new Map<string, number>();
+	allNodeIds.forEach((id, i) => nodeIdx.set(id, i));
+
+	const consistentClusters: ConsistentCurrentCluster[] = [];
+	const diagnostics: ValidationDiagnostic[] = [];
+
+	const refIdx = nodeIdx.get('0');
+	if (refIdx === undefined) {
+		return { consistentClusters, diagnostics };
+	}
+
+	const ufNoCS = new UnionFind(allNodeIds.length);
+	for (const comp of activeComponents) {
+		if (comp.kind === 'current_source' || isDependentCurrentSource(comp.kind)) continue;
+		if (mode === 'dc' && comp.kind === 'capacitor') continue;
+		const [nA, nB] = componentNodes[comp.id] ?? [];
+		if (!nA || !nB) continue;
+		ufNoCS.union(nodeIdx.get(nA)!, nodeIdx.get(nB)!);
+	}
+
+	const refRoot = ufNoCS.find(refIdx);
+	const isolatedClusters = new Map<number, string[]>();
+	for (const id of allNodeIds) {
+		const idx = nodeIdx.get(id)!;
+		const root = ufNoCS.find(idx);
+		if (root !== refRoot) {
+			const list = isolatedClusters.get(root) ?? [];
+			list.push(id);
+			isolatedClusters.set(root, list);
+		}
+	}
+
+	const csIsolatedNodes: string[] = [];
+	const csIsolatedNodeSet = new Set<string>();
+
+	for (const clusterNodes of isolatedClusters.values()) {
+		const clusterSet = new Set(clusterNodes);
+		const touchingCurrentSources = activeComponents.filter(
+			(c) =>
+				(c.kind === 'current_source' || isDependentCurrentSource(c.kind)) &&
+				(componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid))
+		);
+
+		if (touchingCurrentSources.length === 0) {
+			const touchingComps = activeComponents
+				.filter((c) => (componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid)))
+				.map((c) => c.id);
+			const onlyDcCap =
+				mode === 'dc' &&
+				activeComponents.some(
+					(c) =>
+						c.kind === 'capacitor' &&
+						(componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid))
+				) &&
+				touchingComps.every((id) => {
+					const comp = activeComponents.find((c) => c.id === id);
+					return comp?.kind === 'capacitor';
+				});
+
+			diagnostics.push({
+				severity: 'error',
+				code: 'FLOATING_SUBCIRCUIT',
+				message: onlyDcCap
+					? `Node(s) ${clusterNodes.join(', ')} have no DC conducting path to reference node "0" (isolated by open capacitor(s) in DC mode).`
+					: `Floating subcircuit detected at node(s) ${clusterNodes.join(', ')} with no path to reference node "0".`,
+				componentIds: touchingComps,
+				nodeIds: clusterNodes
+			});
+		} else {
+			for (const nid of clusterNodes) {
+				csIsolatedNodes.push(nid);
+				csIsolatedNodeSet.add(nid);
+			}
+		}
+	}
+
+	if (csIsolatedNodes.length === 0) {
+		return { consistentClusters, diagnostics };
+	}
+
+	// Group current-source-isolated nodes connected via ufNoCS or current sources so multi-hop
+	// series chains (e.g. 3+ equal current sources in series) are analyzed as one connected cluster.
+	const csNodeIdx = new Map<string, number>();
+	csIsolatedNodes.forEach((id, i) => csNodeIdx.set(id, i));
+	const ufCsGroup = new UnionFind(csIsolatedNodes.length);
+
+	for (const clusterNodes of isolatedClusters.values()) {
+		if (!csNodeIdx.has(clusterNodes[0])) continue;
+		const base = csNodeIdx.get(clusterNodes[0])!;
+		for (let i = 1; i < clusterNodes.length; i++) {
+			ufCsGroup.union(base, csNodeIdx.get(clusterNodes[i])!);
+		}
+	}
+	for (const comp of activeComponents) {
+		if (comp.kind !== 'current_source' && !isDependentCurrentSource(comp.kind)) continue;
+		const [nA, nB] = componentNodes[comp.id] ?? [];
+		if (nA && nB && csIsolatedNodeSet.has(nA) && csIsolatedNodeSet.has(nB)) {
+			ufCsGroup.union(csNodeIdx.get(nA)!, csNodeIdx.get(nB)!);
+		}
+	}
+
+	const csGroups = new Map<number, string[]>();
+	for (const nid of csIsolatedNodes) {
+		const root = ufCsGroup.find(csNodeIdx.get(nid)!);
+		const list = csGroups.get(root) ?? [];
+		list.push(nid);
+		csGroups.set(root, list);
+	}
+
+	for (const clusterNodes of csGroups.values()) {
+		const clusterSet = new Set(clusterNodes);
+		const touchingActive = activeComponents.filter((c) =>
+			(componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid))
+		);
+		const touchingCurrentSources = touchingActive.filter(
+			(c) => c.kind === 'current_source' || isDependentCurrentSource(c.kind)
+		);
+
+		// Condition 1: Every active component touching any node in clusterNodes must be an
+		// independent current_source with a valid parsed value.
+		let isConsistent = touchingActive.length > 0;
+		const parsedValues = new Map<string, Complex>();
+		if (isConsistent) {
+			for (const c of touchingActive) {
+				if (c.kind !== 'current_source') {
+					isConsistent = false;
+					break;
+				}
+				const val = parseSourceValue(c, mode);
+				if (!val) {
+					isConsistent = false;
+					break;
+				}
+				parsedValues.set(c.id, val);
+			}
+		}
+
+		// Condition 2: KCL holds at every node u in clusterNodes (netLeaving == 0)
+		// and every node has at least 2 non-self-shorted incident current sources.
+		if (isConsistent) {
+			for (const u of clusterNodes) {
+				let netLeaving = Complex.zero();
+				let scale = 1;
+				let nonSelfCount = 0;
+				for (const c of touchingActive) {
+					const [nA, nB] = componentNodes[c.id] ?? [];
+					if (!nA || !nB || nA === nB) continue;
+					if (nA !== u && nB !== u) continue;
+					const val = parsedValues.get(c.id)!;
+					nonSelfCount++;
+					scale = Math.max(scale, val.abs());
+					if (nA === u) {
+						netLeaving = netLeaving.add(val);
+					} else {
+						netLeaving = netLeaving.sub(val);
+					}
+				}
+				if (nonSelfCount < 2 || netLeaving.abs() > 1e-9 * scale) {
+					isConsistent = false;
+					break;
+				}
+			}
+		}
+
+		// Condition 3: Connected via those independent current sources to at least one node in the
+		// ground-connected main circuit (outside clusterNodes, where ufNoCS.find(idx) === refRoot).
+		if (isConsistent) {
+			const connectsToMain = touchingActive.some((c) => {
+				const [nA, nB] = componentNodes[c.id] ?? [];
+				if (!nA || !nB || nA === nB) return false;
+				const aIn = clusterSet.has(nA);
+				const bIn = clusterSet.has(nB);
+				if (aIn === bIn) return false;
+				const outside = aIn ? nB : nA;
+				const outIdx = nodeIdx.get(outside);
+				return outIdx !== undefined && ufNoCS.find(outIdx) === refRoot;
+			});
+			if (!connectsToMain) {
+				isConsistent = false;
+			}
+		}
+
+		if (isConsistent) {
+			const sourceIds = touchingActive.map((c) => c.id);
+			const sourceLabels = touchingActive.map((c) => c.label);
+			consistentClusters.push({
+				nodes: clusterNodes,
+				sourceIds,
+				sourceLabels
+			});
+			diagnostics.push({
+				severity: 'warning',
+				code: 'SERIES_CURRENT_SOURCES',
+				message: `Series current sources (${sourceLabels.join(', ')}) are KCL-consistent at node(s) ${clusterNodes.join(', ')}; total voltage splits equally by symmetry.`,
+				componentIds: sourceIds,
+				nodeIds: clusterNodes
+			});
+		} else {
+			const csLabels = touchingCurrentSources.map((c) => c.label).join(', ');
+			diagnostics.push({
+				severity: 'error',
+				code: 'CURRENT_SOURCE_CUTSET',
+				message: `Current-source cutset / open current source at node(s) ${clusterNodes.join(', ')} (${csLabels}); KCL cannot uniquely determine node voltages.`,
+				componentIds: touchingCurrentSources.map((c) => c.id),
+				nodeIds: clusterNodes
+			});
+		}
+	}
+
+	return { consistentClusters, diagnostics };
+}
+
 /**
  * Validates electrical topology, component values, voltage-source loops,
  * current-source cutsets, and disconnected floating subcircuits.
@@ -907,120 +1381,13 @@ export function validateCircuitTopology(
 		}
 	}
 
-	// Node indexing for topology checks
-	const allNodeIds = Object.keys(nodes);
-	const nodeIdx = new Map<string, number>();
-	allNodeIds.forEach((id, i) => nodeIdx.set(id, i));
-
-	// 1. Check for voltage-source / DC-inductor loops (zero-impedance cycles)
-	const ufZero = new UnionFind(allNodeIds.length);
-	const zeroBranches = activeComponents.filter(
-		(c) =>
-			c.kind === 'voltage_source' ||
-			isDependentVoltageSource(c.kind) ||
-			(mode === 'dc' && c.kind === 'inductor')
-	);
-
-	for (const zb of zeroBranches) {
-		const [nA, nB] = componentNodes[zb.id] ?? [];
-		if (!nA || !nB) continue;
-		const iA = nodeIdx.get(nA)!;
-		const iB = nodeIdx.get(nB)!;
-		if (nA === nB) {
-			// Inductor self-short already reported above; voltage source self-short reported here
-			if (zb.kind === 'voltage_source' || isDependentVoltageSource(zb.kind)) {
-				diagnostics.push({
-					severity: 'error',
-					code: 'VOLTAGE_SOURCE_LOOP',
-					message: `Voltage source ${zb.label} is shorted across node ${nA}.`,
-					componentIds: [zb.id],
-					nodeIds: [nA]
-				});
-			}
-		} else if (ufZero.connected(iA, iB)) {
-			diagnostics.push({
-				severity: 'error',
-				code: 'VOLTAGE_SOURCE_LOOP',
-				message: `Ideal voltage-source / DC-inductor loop detected involving ${zb.label} between ${nA} and ${nB}.`,
-				componentIds: [zb.id],
-				nodeIds: [nA, nB]
-			});
-		} else {
-			ufZero.union(iA, iB);
-		}
-	}
+	// 1. Check for voltage-source / DC-inductor loops (KVL-consistent vs conflicting)
+	const vLoops = analyzeVoltageSourceLoops(graph, mode);
+	diagnostics.push(...vLoops.diagnostics);
 
 	// 2. Check conducting connectivity without current sources (and without DC open capacitors)
-	const refIdx = nodeIdx.get('0');
-	if (refIdx === undefined) {
-		return diagnostics;
-	}
-
-	const ufNoCS = new UnionFind(allNodeIds.length);
-	for (const comp of activeComponents) {
-		if (comp.kind === 'current_source' || isDependentCurrentSource(comp.kind)) continue;
-		if (mode === 'dc' && comp.kind === 'capacitor') continue;
-		const [nA, nB] = componentNodes[comp.id] ?? [];
-		if (!nA || !nB) continue;
-		ufNoCS.union(nodeIdx.get(nA)!, nodeIdx.get(nB)!);
-	}
-
-	const refRoot = ufNoCS.find(refIdx);
-	const isolatedClusters = new Map<number, string[]>();
-	for (const id of allNodeIds) {
-		const idx = nodeIdx.get(id)!;
-		const root = ufNoCS.find(idx);
-		if (root !== refRoot) {
-			const list = isolatedClusters.get(root) ?? [];
-			list.push(id);
-			isolatedClusters.set(root, list);
-		}
-	}
-
-	for (const clusterNodes of isolatedClusters.values()) {
-		const clusterSet = new Set(clusterNodes);
-		const touchingCurrentSources = activeComponents.filter(
-			(c) =>
-				(c.kind === 'current_source' || isDependentCurrentSource(c.kind)) &&
-				(componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid))
-		);
-
-		if (touchingCurrentSources.length > 0) {
-			const csLabels = touchingCurrentSources.map((c) => c.label).join(', ');
-			diagnostics.push({
-				severity: 'error',
-				code: 'CURRENT_SOURCE_CUTSET',
-				message: `Current-source cutset / open current source at node(s) ${clusterNodes.join(', ')} (${csLabels}); KCL cannot uniquely determine node voltages.`,
-				componentIds: touchingCurrentSources.map((c) => c.id),
-				nodeIds: clusterNodes
-			});
-		} else {
-			const touchingComps = activeComponents
-				.filter((c) => (componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid)))
-				.map((c) => c.id);
-			const onlyDcCap =
-				mode === 'dc' &&
-				activeComponents.some(
-					(c) =>
-						c.kind === 'capacitor' &&
-						(componentNodes[c.id] ?? []).some((nid) => clusterSet.has(nid))
-				) &&
-				touchingComps.every((id) => {
-					const comp = activeComponents.find((c) => c.id === id);
-					return comp?.kind === 'capacitor';
-				});
-
-			diagnostics.push({
-				severity: 'error',
-				code: 'FLOATING_SUBCIRCUIT',
-				message: onlyDcCap
-					? `Node(s) ${clusterNodes.join(', ')} have no DC conducting path to reference node "0" (isolated by open capacitor(s) in DC mode).`
-					: `Floating subcircuit detected at node(s) ${clusterNodes.join(', ')} with no path to reference node "0".`,
-				componentIds: touchingComps,
-				nodeIds: clusterNodes
-			});
-		}
-	}
+	const csCutsets = analyzeCurrentSourceCutsets(graph, mode);
+	diagnostics.push(...csCutsets.diagnostics);
 
 	return diagnostics;
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Complex } from '../complex';
+import { parseCircuitImport } from '../io';
 import { solveMNA } from '../mna';
+import { decodeCircuitFromHash, encodeCircuitToHash } from '../share';
+import { solveCircuit } from '../solve';
 import type { CircuitComponent, CircuitDocument } from '../types';
 
 function comp(
@@ -1010,5 +1013,372 @@ describe('solveMNA — 15+ classic DC & AC circuits + error diagnostics', () => 
 				(d) => d.severity === 'error' && d.code === 'INVALID_DEPENDENT_CONTROL'
 			)
 		).toBe(true);
+	});
+
+	it('23. User exam circuit Fig. Q1 (parallel 12 V || 12 V + series 3 A / -3 A + CCCS + X-bridge) solves exactly and survives #c=v1. share round-trip', async () => {
+		const figQ1Netlist = {
+			schemaVersion: 1,
+			name: 'Fig. Q1',
+			mode: 'dc',
+			elements: [
+				{
+					id: 'F1',
+					kind: 'cccs',
+					label: 'F1',
+					from: '0',
+					to: 'T',
+					value: '3',
+					controlRef: { controlBranchComponentId: 'R_3', controlPolarity: 1 }
+				},
+				{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'T', to: '0', value: '12' },
+				{ id: 'V2', kind: 'voltage_source', label: 'V2', from: 'T', to: '0', value: '12' },
+				{ id: 'R_4', kind: 'resistor', label: 'R_4', from: 'T', to: '0', value: '4' },
+				{ id: 'R_3', kind: 'resistor', label: 'R_3', from: 'B', to: '0', value: '3' },
+				{ id: 'I1', kind: 'current_source', label: 'I1', from: 'mid', to: '0', value: '3' },
+				{ id: 'I2', kind: 'current_source', label: 'I2', from: 'mid', to: 'B', value: '-3' },
+				{ id: 'I3', kind: 'current_source', label: 'I3', from: 'B', to: '0', value: '-1' },
+				{ id: 'R_7p5', kind: 'resistor', label: 'R_7p5', from: 'P1', to: 'T', value: '7.5' },
+				{ id: 'R_20', kind: 'resistor', label: 'R_20', from: 'B', to: 'P3', value: '20' },
+				{ id: 'R_top', kind: 'resistor', label: 'R_top', from: 'P1', to: 'P2', value: '3' },
+				{ id: 'R_right', kind: 'resistor', label: 'R_right', from: 'P2', to: 'P4', value: '3.5' },
+				{ id: 'R_bot', kind: 'resistor', label: 'R_bot', from: 'P3', to: 'P4', value: '3' },
+				{ id: 'R_d1', kind: 'resistor', label: 'R_d1', from: 'P1', to: 'C', value: '9' },
+				{ id: 'R_d2', kind: 'resistor', label: 'R_d2', from: 'P2', to: 'C', value: '6' },
+				{ id: 'R_d3', kind: 'resistor', label: 'R_d3', from: 'P3', to: 'C', value: '6' },
+				{ id: 'R_d4', kind: 'resistor', label: 'R_d4', from: 'P4', to: 'C', value: '9' }
+			]
+		};
+
+		const imp = parseCircuitImport(JSON.stringify(figQ1Netlist));
+		expect(imp.ok).toBe(true);
+		if (!imp.ok) return;
+
+		const assertFigQ1 = (doc: CircuitDocument) => {
+			const sol = solveCircuit(doc, {
+				methods: ['kcl_kvl', 'nodal', 'mesh', 'superposition', 'source_transform', 'thevenin_norton'],
+				theveninTarget: { kind: 'component', componentId: 'R_7p5' }
+			});
+
+			expect(sol.mna.valid).toBe(true);
+			expect(sol.mna.powerBalance.balanced).toBe(true);
+			expect(sol.allVerified).toBe(true);
+			expect(sol.maxDiscrepancy).toBeLessThan(1e-8);
+
+			// Warnings include both REDUNDANT_VOLTAGE_SOURCE and SERIES_CURRENT_SOURCES
+			expect(
+				sol.mna.diagnostics.some(
+					(d) => d.severity === 'warning' && d.code === 'REDUNDANT_VOLTAGE_SOURCE'
+				)
+			).toBe(true);
+			expect(
+				sol.mna.diagnostics.some(
+					(d) => d.severity === 'warning' && d.code === 'SERIES_CURRENT_SOURCES'
+				)
+			).toBe(true);
+
+			// Exact analytical node voltages
+			const nodeT = sol.mna.branches['V1'].nodeA;
+			const nodeB = sol.mna.branches['R_3'].nodeA;
+			const nodeMid = sol.mna.branches['I1'].nodeA;
+			expect(sol.mna.nodeVoltages[nodeT].voltage.re).toBeCloseTo(12, 9);
+			expect(sol.mna.nodeVoltages[nodeB].voltage.re).toBeCloseTo(-4.5, 9);
+			expect(sol.mna.nodeVoltages[nodeMid].voltage.re).toBeCloseTo(-2.25, 9);
+
+			// Exact analytical branch currents and voltages
+			expect(sol.mna.branches['R_3'].current.re).toBeCloseTo(-1.5, 9); // I_x
+			expect(sol.mna.branches['R_7p5'].current.re).toBeCloseTo(-0.5, 9); // I_y
+			// V_x = V(0) - V(mid) = +2.25 V, and V(mid) - V(B) = +2.25 V (exact equal split)
+			const v0MinusMid = sol.mna.nodeVoltages['0'].voltage.sub(
+				sol.mna.nodeVoltages[nodeMid].voltage
+			);
+			const vMidMinusB = sol.mna.nodeVoltages[nodeMid].voltage.sub(
+				sol.mna.nodeVoltages[nodeB].voltage
+			);
+			expect(v0MinusMid.re).toBeCloseTo(2.25, 9);
+			expect(vMidMinusB.re).toBeCloseTo(2.25, 9);
+
+			// Equal current sharing across V1 and V2: I_z_total = -(I(V1) + I(V2)) = 8 A (4 A each)
+			expect(sol.mna.branches['V1'].current.re).toBeCloseTo(-4, 9);
+			expect(sol.mna.branches['V2'].current.re).toBeCloseTo(-4, 9);
+			const izTotal = -(sol.mna.branches['V1'].current.re + sol.mna.branches['V2'].current.re);
+			expect(izTotal).toBeCloseTo(8, 9);
+
+			// Pedagogical guards: classical single-method solvers gracefully mark inapplicable,
+			// while Thevenin/Norton solves and verifies cleanly against MNA.
+			expect(sol.methods.nodal?.applicable).toBe(false);
+			expect(sol.methods.mesh?.applicable).toBe(false);
+			expect(sol.methods.kcl_kvl?.applicable).toBe(false);
+			expect(sol.methods.superposition?.applicable).toBe(false);
+			expect(sol.methods.source_transform?.applicable).toBe(false);
+			expect(sol.methods.thevenin_norton?.applicable).toBe(true);
+			expect(sol.methods.thevenin_norton?.verifiedAgainstMna).toBe(true);
+		};
+
+		assertFigQ1(imp.document);
+
+		// Default solveCircuit (auto-selected Thevenin target) also solves cleanly with allVerified = true
+		const defaultSol = solveCircuit(imp.document);
+		expect(defaultSol.mna.valid).toBe(true);
+		expect(defaultSol.allVerified).toBe(true);
+		expect(defaultSol.methods.thevenin_norton?.applicable).toBe(true);
+		expect(defaultSol.methods.thevenin_norton?.verifiedAgainstMna).toBe(true);
+
+		// #c=v1. share round-trip preserves exact Fig. Q1 solution
+		const hash = await encodeCircuitToHash({ document: imp.document });
+		expect(hash.startsWith('#c=v1.')).toBe(true);
+		const decoded = await decodeCircuitFromHash(hash);
+		expect(decoded).not.toBeNull();
+		if (!decoded) return;
+		assertFigQ1(decoded.document);
+	});
+
+	it('24. Parallel equal AC voltage sources and reversed equal DC/AC voltage sources solve with equal current sharing', () => {
+		// 24a: Parallel equal AC voltage sources: 10∠30° V || 10∠30° V driving R1 = 5 Ω
+		const acParImp = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'ac',
+				frequencyHz: 60,
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: '0', value: '10∠30°' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: 'A', to: '0', value: '10∠30°' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '5' }
+				]
+			})
+		);
+		expect(acParImp.ok).toBe(true);
+		if (!acParImp.ok) return;
+		const acParSol = solveCircuit(acParImp.document);
+		expect(acParSol.mna.valid).toBe(true);
+		expect(acParSol.mna.powerBalance.balanced).toBe(true);
+		expect(acParSol.allVerified).toBe(true);
+		expect(
+			acParSol.mna.diagnostics.some(
+				(d) => d.severity === 'warning' && d.code === 'REDUNDANT_VOLTAGE_SOURCE'
+			)
+		).toBe(true);
+		const expectedEachAc = Complex.fromPolar(-1, 30); // total 2∠30° A leaves A->0 in R1, so each source carries -1∠30° A (A->0)
+		expect(acParSol.mna.branches['V1'].current.sub(expectedEachAc).abs()).toBeLessThan(1e-9);
+		expect(acParSol.mna.branches['V2'].current.sub(expectedEachAc).abs()).toBeLessThan(1e-9);
+
+		// 24b: Reversed equal DC voltage sources: V1 (A->0, 12V) || V2 (0->A, -12V) driving R1 = 3 Ω (total 4 A)
+		const dcRevImp = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'dc',
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: '0', value: '12' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: '0', to: 'A', value: '-12' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '3' }
+				]
+			})
+		);
+		expect(dcRevImp.ok).toBe(true);
+		if (!dcRevImp.ok) return;
+		const dcRevSol = solveMNA(dcRevImp.document);
+		expect(dcRevSol.valid).toBe(true);
+		expect(dcRevSol.powerBalance.balanced).toBe(true);
+		expect(dcRevSol.branches['V1'].current.re).toBeCloseTo(-2, 9); // 2 A supplied out of + (A)
+		expect(dcRevSol.branches['V2'].current.re).toBeCloseTo(2, 9); // 2 A flows 0 -> A (same physical direction!)
+
+		// 24c: Reversed equal AC voltage sources: V1 (A->0, 10∠30°) || V2 (0->A, 10∠-150°) driving R1 = 5 Ω
+		const acRevImp = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'ac',
+				frequencyHz: 60,
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: '0', value: '10∠30°' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: '0', to: 'A', value: '10∠-150°' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '5' }
+				]
+			})
+		);
+		expect(acRevImp.ok).toBe(true);
+		if (!acRevImp.ok) return;
+		const acRevSol = solveMNA(acRevImp.document);
+		expect(acRevSol.valid).toBe(true);
+		expect(acRevSol.powerBalance.balanced).toBe(true);
+		expect(acRevSol.branches['V1'].current.sub(Complex.fromPolar(-1, 30)).abs()).toBeLessThan(1e-9);
+		expect(acRevSol.branches['V2'].current.sub(Complex.fromPolar(1, 30)).abs()).toBeLessThan(1e-9);
+	});
+
+	it('25. Conflicting parallel voltage sources (10V||5V, opposing 12V, 10∠0°||10∠90°) still fail with VOLTAGE_SOURCE_LOOP', () => {
+		const cases = [
+			{
+				mode: 'dc' as const,
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: '0', value: '10' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: 'A', to: '0', value: '5' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '10' }
+				]
+			},
+			{
+				mode: 'dc' as const,
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: '0', value: '12' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: '0', to: 'A', value: '12' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '10' }
+				]
+			},
+			{
+				mode: 'ac' as const,
+				frequencyHz: 60,
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: '0', value: '10∠0°' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: 'A', to: '0', value: '10∠90°' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '10' }
+				]
+			}
+		];
+
+		for (const netlist of cases) {
+			const imp = parseCircuitImport(JSON.stringify({ schemaVersion: 1, ...netlist }));
+			expect(imp.ok).toBe(true);
+			if (!imp.ok) continue;
+			const sol = solveMNA(imp.document);
+			expect(sol.valid).toBe(false);
+			expect(
+				sol.diagnostics.some((d) => d.severity === 'error' && d.code === 'VOLTAGE_SOURCE_LOOP')
+			).toBe(true);
+		}
+	});
+
+	it('26. Series equal AC current sources and 3 equal DC current sources in series solve with exact equal voltage split', () => {
+		// 26a: Two series AC current sources (2∠45° A) driving R1 = 10 Ω -> V_total = 20∠45° V, 10∠45° V each
+		const acSerImp = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'ac',
+				frequencyHz: 60,
+				elements: [
+					{ id: 'I1', kind: 'current_source', label: 'I1', from: '0', to: 'm1', value: '2∠45°' },
+					{ id: 'I2', kind: 'current_source', label: 'I2', from: 'm1', to: 'A', value: '2∠45°' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '10' }
+				]
+			})
+		);
+		expect(acSerImp.ok).toBe(true);
+		if (!acSerImp.ok) return;
+		const acSerSol = solveCircuit(acSerImp.document);
+		expect(acSerSol.mna.valid).toBe(true);
+		expect(acSerSol.mna.powerBalance.balanced).toBe(true);
+		expect(acSerSol.allVerified).toBe(true);
+		expect(
+			acSerSol.mna.diagnostics.some(
+				(d) => d.severity === 'warning' && d.code === 'SERIES_CURRENT_SOURCES'
+			)
+		).toBe(true);
+		const expectedVTotal = Complex.fromPolar(20, 45);
+		const expectedHalf = Complex.fromPolar(-10, 45); // V_pin0 - V_pin1 = 0 - 10∠45° = -10∠45°
+		expect(acSerSol.mna.branches['R1'].voltage.sub(expectedVTotal).abs()).toBeLessThan(1e-9);
+		expect(acSerSol.mna.branches['I1'].voltage.sub(expectedHalf).abs()).toBeLessThan(1e-9);
+		expect(acSerSol.mna.branches['I2'].voltage.sub(expectedHalf).abs()).toBeLessThan(1e-9);
+
+		// 26b: Three equal DC current sources (3 A) in series driving R1 = 10 Ω -> V_A = 30 V, 10 V drop each
+		const dc3SerImp = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'dc',
+				elements: [
+					{ id: 'I1', kind: 'current_source', label: 'I1', from: '0', to: 'm1', value: '3' },
+					{ id: 'I2', kind: 'current_source', label: 'I2', from: 'm1', to: 'm2', value: '3' },
+					{ id: 'I3', kind: 'current_source', label: 'I3', from: 'm2', to: 'A', value: '3' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '10' }
+				]
+			})
+		);
+		expect(dc3SerImp.ok).toBe(true);
+		if (!dc3SerImp.ok) return;
+		const dc3SerSol = solveCircuit(dc3SerImp.document);
+		expect(dc3SerSol.mna.valid).toBe(true);
+		expect(dc3SerSol.mna.powerBalance.balanced).toBe(true);
+		expect(dc3SerSol.allVerified).toBe(true);
+		expect(dc3SerSol.mna.branches['R1'].voltage.re).toBeCloseTo(30, 9);
+		expect(dc3SerSol.mna.branches['I1'].voltage.re).toBeCloseTo(-10, 9);
+		expect(dc3SerSol.mna.branches['I2'].voltage.re).toBeCloseTo(-10, 9);
+		expect(dc3SerSol.mna.branches['I3'].voltage.re).toBeCloseTo(-10, 9);
+	});
+
+	it('27. Conflicting series current sources (3 A + 2 A) and open current source (2 A) still fail with CURRENT_SOURCE_CUTSET', () => {
+		const conflictSer = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'dc',
+				elements: [
+					{ id: 'I1', kind: 'current_source', label: 'I1', from: '0', to: 'm1', value: '3' },
+					{ id: 'I2', kind: 'current_source', label: 'I2', from: 'm1', to: 'A', value: '2' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '10' }
+				]
+			})
+		);
+		expect(conflictSer.ok).toBe(true);
+		if (conflictSer.ok) {
+			const sol = solveMNA(conflictSer.document);
+			expect(sol.valid).toBe(false);
+			expect(
+				sol.diagnostics.some(
+					(d) => d.severity === 'error' && d.code === 'CURRENT_SOURCE_CUTSET'
+				)
+			).toBe(true);
+		}
+
+		const openCs = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'dc',
+				elements: [
+					{ id: 'I1', kind: 'current_source', label: 'I1', from: '0', to: 'A', value: '2' }
+				]
+			})
+		);
+		expect(openCs.ok).toBe(true);
+		if (openCs.ok) {
+			const sol = solveMNA(openCs.document);
+			expect(sol.valid).toBe(false);
+			expect(
+				sol.diagnostics.some(
+					(d) => d.severity === 'error' && d.code === 'CURRENT_SOURCE_CUTSET'
+				)
+			).toBe(true);
+		}
+	});
+
+	it('28. KVL-consistent 3-source voltage triangle (V1 = 5 V, V2 = 7 V, V3 = 12 V) solves cleanly with balanced power', () => {
+		const triImp = parseCircuitImport(
+			JSON.stringify({
+				schemaVersion: 1,
+				mode: 'dc',
+				elements: [
+					{ id: 'V1', kind: 'voltage_source', label: 'V1', from: 'A', to: 'B', value: '5' },
+					{ id: 'V2', kind: 'voltage_source', label: 'V2', from: 'B', to: '0', value: '7' },
+					{ id: 'V3', kind: 'voltage_source', label: 'V3', from: 'A', to: '0', value: '12' },
+					{ id: 'R1', kind: 'resistor', label: 'R1', from: 'A', to: '0', value: '6' },
+					{ id: 'R2', kind: 'resistor', label: 'R2', from: 'B', to: '0', value: '7' }
+				]
+			})
+		);
+		expect(triImp.ok).toBe(true);
+		if (!triImp.ok) return;
+		const sol = solveCircuit(triImp.document);
+		expect(sol.mna.valid).toBe(true);
+		expect(sol.mna.powerBalance.balanced).toBe(true);
+		expect(sol.allVerified).toBe(true);
+		expect(
+			sol.mna.diagnostics.some(
+				(d) => d.severity === 'warning' && d.code === 'REDUNDANT_VOLTAGE_SOURCE'
+			)
+		).toBe(true);
+		expect(sol.mna.branches['R1'].voltage.re).toBeCloseTo(12, 9);
+		expect(sol.mna.branches['R2'].voltage.re).toBeCloseTo(7, 9);
+		expect(sol.mna.branches['R1'].current.re).toBeCloseTo(2, 9);
+		expect(sol.mna.branches['R2'].current.re).toBeCloseTo(1, 9);
+		// Cycle symmetry: I_V1 + I_V2 - I_V3 = 0, plus KCL at A (I_V1 + I_V3 = -2) and B (-I_V1 + I_V2 = -1)
+		const i1 = sol.mna.branches['V1'].current.re;
+		const i2 = sol.mna.branches['V2'].current.re;
+		const i3 = sol.mna.branches['V3'].current.re;
+		expect(i1 + i2 - i3).toBeCloseTo(0, 9);
+		expect(i1 + i3).toBeCloseTo(-2, 9);
+		expect(-i1 + i2).toBeCloseTo(-1, 9);
 	});
 });

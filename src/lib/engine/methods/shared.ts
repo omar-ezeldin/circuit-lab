@@ -586,3 +586,24 @@ export function courseSolveDisplay(
 	}
 	return { latex, remaining: unknownCols.length };
 }
+
+/**
+ * Returns a clear inapplicability reason for classical pedagogical methods (Nodal, Mesh,
+ * KCL/KVL, Superposition, Source Transformation) when a circuit relies on MNA symmetry
+ * constraints for KVL-consistent redundant voltage sources or KCL-consistent series current
+ * sources. Returns `null` for standard topologies.
+ */
+export function getRedundantSourceInapplicableReason(mna: MnaSolution): string | null {
+	const hasRedundantV = mna.diagnostics.some((d) => d.code === 'REDUNDANT_VOLTAGE_SOURCE');
+	const hasSeriesI = mna.diagnostics.some((d) => d.code === 'SERIES_CURRENT_SOURCES');
+	if (!hasRedundantV && !hasSeriesI) return null;
+
+	if (hasRedundantV && hasSeriesI) {
+		return 'Circuit contains KVL-consistent parallel/loop voltage sources and KCL-consistent series current sources. MNA solves the full network by symmetry; combine redundant parallel voltage sources and series current sources first for single-method step-by-step derivations.';
+	}
+	if (hasRedundantV) {
+		return 'Circuit contains KVL-consistent parallel/loop voltage sources. MNA solves the full network with equal current sharing by symmetry; combine redundant parallel voltage sources first for this derivation method.';
+	}
+	return 'Circuit contains KCL-consistent series current sources. MNA solves the full network with equal voltage sharing by symmetry; combine redundant series current sources first for this derivation method.';
+}
+
