@@ -24,6 +24,18 @@ export {
 	getQuestionTypeMeta,
 	getQuestionTypesByCategory
 } from './catalog';
+export {
+	AI_MACHINES_IMPORT_PROMPT,
+	ALL_MACHINE_AI_TOPIC_SLUGS,
+	MACHINE_AI_TOPIC_SLUG_MAP,
+	MACHINE_QUESTION_TYPE_TO_SLUG,
+	parseMachineAiImport,
+	resolveMachineQuestionType,
+	type MachineAiImportFailure,
+	type MachineAiImportResult,
+	type MachineAiImportSuccess,
+	type MachineAiTopicSlug
+} from './ai-import';
 
 import { solveThreePhase } from './three-phase';
 import {

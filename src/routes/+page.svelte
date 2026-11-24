@@ -38,7 +38,11 @@
 		SchematicCanvas
 	} from '$lib/components/editor';
 	import { ResultsPanel, formatFrequency } from '$lib/components/results';
-	import { MachinesWorkbench } from '$lib/components/machines';
+	import {
+		ImportMachineFromAIDialog,
+		MachinesWorkbench,
+		type MachineAiImportPayload
+	} from '$lib/components/machines';
 	import {
 		Badge,
 		Button,
@@ -76,7 +80,9 @@
 	let presetsOpen = $state(false);
 	let jsonOpen = $state(false);
 	let aiOpen = $state(false);
+	let machineAiImportOpen = $state(false);
 	let settingsOpen = $state(false);
+	let machinesWorkbenchRef = $state<ReturnType<typeof MachinesWorkbench> | null>(null);
 	let linkCopied = $state(false);
 	let acComingSoonNotice = $state<string | null>(null);
 	let autoWireFeedback = $state<string | null>(null);
@@ -181,6 +187,10 @@
 		circuit.loadDocument(doc);
 		rightTab = 'results';
 		rightRailOpen = true;
+	}
+
+	function handleMachineAiImport(payload: MachineAiImportPayload) {
+		machinesWorkbenchRef?.applyImportedProblem(payload.questionTypeId, payload.input);
 	}
 
 	function handleCanvasComponentInspect(id: string) {
@@ -666,6 +676,19 @@
 					</Tooltip>
 				</div>
 			{:else}
+				<Tooltip content="Import an Electrical Machines problem via AI" side="bottom">
+					<Button
+						variant="outline"
+						size="sm"
+						class="relative h-8 gap-1 px-2 text-xs font-medium text-foreground after:absolute after:-inset-1 hover:bg-accent hover:text-foreground sm:px-2.5 lg:h-7 lg:after:hidden"
+						aria-label="AI Import"
+						onclick={() => (machineAiImportOpen = true)}
+					>
+						<ScanLine class="size-3.5 shrink-0" aria-hidden="true" />
+						<span class="sm:hidden">AI</span>
+						<span class="hidden sm:inline">AI Import</span>
+					</Button>
+				</Tooltip>
 				<Tooltip content="Workbench preferences & IEEE/IEC standard" side="bottom">
 					<Button
 						variant="ghost"
@@ -804,7 +827,7 @@
 	{/if}
 
 	{#if workspaceMode === 'machines'}
-		<MachinesWorkbench />
+		<MachinesWorkbench bind:this={machinesWorkbenchRef} />
 	{:else}
 
 	{#if acComingSoonNotice}
@@ -1343,4 +1366,8 @@
 	{linkCopied}
 />
 <ImportFromAIDialog bind:open={aiOpen} onImportDocument={handleImportDocument} />
+<ImportMachineFromAIDialog
+	bind:open={machineAiImportOpen}
+	onImportMachine={handleMachineAiImport}
+/>
 <SettingsDialog bind:open={settingsOpen} />

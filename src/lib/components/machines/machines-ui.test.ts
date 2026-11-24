@@ -7,6 +7,7 @@ import {
 	type MachineQuestionTypeId
 } from '$lib/machines';
 import {
+	ImportMachineFromAIDialog,
 	MachineDiagram,
 	MachineInputForm,
 	MachineSolutionPanel,
@@ -128,5 +129,59 @@ describe('Machines UI Components', () => {
 		expect(body).toContain('Invalid Parameter Combination');
 		expect(body).not.toContain('QT-3PH-1');
 		expect(body).not.toContain('katex-error');
+	});
+
+	it('renders ImportMachineFromAIDialog with plain-English preview, mobile-safe textarea, and zero QT-* codes', () => {
+		const sampleJson = JSON.stringify({
+			type: 'transformer_oc_sc',
+			title: '20 kVA 2000/200 V Exam Problem',
+			input: {
+				ratedVA: 20000,
+				v1Rated: 2000,
+				v2Rated: 200,
+				frequencyHz: 50,
+				ocSide: 'LV',
+				vOc: 200,
+				iOc: 4,
+				pOc: 120,
+				scSide: 'HV',
+				vSc: 60,
+				iSc: 10,
+				pSc: 300,
+				referTo: 'primary',
+				evalLoadFraction: 1,
+				evalPf: 0.8,
+				evalPfType: 'lag'
+			}
+		});
+
+		const { body } = render(ImportMachineFromAIDialog, {
+			props: {
+				open: true,
+				initialJson: sampleJson,
+				onImportMachine: () => {}
+			}
+		});
+		const visibleText = stripTags(body);
+
+		expect(body).toContain('Import Machines Problem from AI');
+		expect(body).toContain('Copy AI Prompt');
+		expect(body).toContain('Load Sample');
+		expect(body).toContain('Load &amp; Solve');
+		expect(body).toContain('text-base');
+		expect(visibleText).toContain(escapeHtml('Transformer · OC & SC Tests'));
+		expect(visibleText).toContain('20 kVA 2000/200 V Exam Problem');
+		expect(visibleText).not.toMatch(/\bQT-[A-Z0-9]+-\d+\b/);
+
+		const { body: invalidBody } = render(ImportMachineFromAIDialog, {
+			props: {
+				open: true,
+				initialJson: '{"type":"unknown_topic","input":{}}',
+				onImportMachine: () => {}
+			}
+		});
+		expect(invalidBody).toContain('role="alert"');
+		expect(invalidBody).toContain('Could not validate machines JSON');
+		expect(stripTags(invalidBody)).not.toMatch(/\bQT-[A-Z0-9]+-\d+\b/);
 	});
 });

@@ -103,6 +103,19 @@
 	function handleInputChange(next: MachineInputMap[MachineQuestionTypeId]) {
 		inputState = next;
 	}
+
+	export function applyImportedProblem(
+		questionTypeId: MachineQuestionTypeId,
+		input: MachineInputMap[MachineQuestionTypeId]
+	) {
+		const meta = MACHINE_QUESTION_TYPES[questionTypeId];
+		selectedCategory = meta.category;
+		selectedTypeId = questionTypeId;
+		activePresetId = null;
+		inputState = cloneInput(input);
+		topicsSheetOpen = false;
+		mobilePane = 'solution';
+	}
 </script>
 
 <div
