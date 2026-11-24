@@ -2069,44 +2069,59 @@
 		className
 	)}
 >
-	<!-- Mobile & Tablet Flush Top Telemetry Strip (< lg) -->
-	<div class="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-rail px-3 text-[11px] lg:hidden">
+	<!-- Mobile & Tablet Flush Top Telemetry & Quick-Actions Strip (< lg) -->
+	<div class="flex min-h-11 shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-rail px-2.5 text-[11px] lg:hidden">
 		<div class="flex min-w-0 items-center gap-1.5 font-engineering">
 			{#if localCrossingFeedback}
 				<span role="status" aria-live="polite" class="truncate text-foreground">
 					{localCrossingFeedback}
 				</span>
 			{:else}
-				<span class="text-muted-foreground">
+				{#if circuit.document.components.length === 0}
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50 sm:hidden" aria-hidden="true"></span>
+				{:else if hasErrors}
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive sm:hidden" aria-hidden="true"></span>
+				{:else if circuit.solution.mna.valid}
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-branch-current sm:hidden" aria-hidden="true"></span>
+				{:else}
+					<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning sm:hidden" aria-hidden="true"></span>
+				{/if}
+				<span class="whitespace-nowrap text-voltage">
+					{nodeCount} {nodeCount === 1 ? 'Node' : 'Nodes'}
+				</span>
+				<span class="hidden text-muted-foreground/60 sm:inline" aria-hidden="true">·</span>
+				<span class="hidden whitespace-nowrap text-muted-foreground sm:inline">
 					Snap: <span class="text-foreground">{settings.snapToGrid ? 'ON' : 'OFF'}</span>
 				</span>
-				<span class="text-muted-foreground/60" aria-hidden="true">·</span>
-				<span class="text-voltage">
-					{nodeCount} {nodeCount === 1 ? 'Node' : 'Nodes'}
+				<span class="hidden text-muted-foreground/60 sm:inline" aria-hidden="true">·</span>
+				<span class="hidden whitespace-nowrap text-muted-foreground sm:inline">
+					{Math.round(zoom * 100)}%
 				</span>
 			{/if}
 		</div>
 
-		<div class="flex shrink-0 items-center gap-1.5 font-engineering sm:hidden">
-			{#if circuit.document.components.length === 0}
-				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" aria-hidden="true"></span>
-				<span class="text-muted-foreground">Empty</span>
-			{:else if hasErrors}
-				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true"></span>
-				<span class="font-medium text-destructive">Error</span>
-			{:else if circuit.solution.mna.valid}
-				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-branch-current" aria-hidden="true"></span>
-				<span class="text-foreground">
-					{circuit.solution.allVerified ? 'Verified' : 'MNA'}
-				</span>
-			{:else}
-				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true"></span>
-				<span class="text-muted-foreground">Idle</span>
-			{/if}
+		<div class="flex shrink-0 items-center gap-1">
+			<button
+				type="button"
+				aria-label="Auto-wire unconnected pins"
+				disabled={circuit.document.components.length < 2}
+				onclick={triggerAutoWire}
+				class="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 rounded-[4px] border border-transparent px-2 text-xs font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
+			>
+				<Cable class="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+				<span>Auto-Wire</span>
+			</button>
+			<button
+				type="button"
+				aria-label="Clear canvas"
+				disabled={circuit.document.components.length === 0 && circuit.document.wires.length === 0}
+				onclick={() => circuit.clearCircuit()}
+				class="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 rounded-[4px] border border-transparent px-2 text-xs font-medium text-destructive transition-colors duration-150 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
+			>
+				<Eraser class="size-3.5 shrink-0" aria-hidden="true" />
+				<span>Clear</span>
+			</button>
 		</div>
-		<span class="hidden shrink-0 font-engineering text-muted-foreground sm:inline">
-			{Math.round(zoom * 100)}%
-		</span>
 	</div>
 
 	<!-- Flush Top Contextual Strip (only when wiring, placing, wire-tool, or probing) -->

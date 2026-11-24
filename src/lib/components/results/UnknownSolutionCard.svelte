@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { AlertCircle, Check } from 'lucide-svelte';
-	import { Accordion, AccordionItem, Button } from '$lib/components/ui';
+	import { Button } from '$lib/components/ui';
 	import {
 		formatUnknownTermExpr,
 		isImpedanceSpecified,
@@ -21,7 +21,6 @@
 		formatRealPower,
 		type FormattedValueParts
 	} from './formatters';
-	import MathBlock from './MathBlock.svelte';
 
 	type Props = {
 		unknownSolution: UnknownSolveResult;
@@ -30,8 +29,6 @@
 		onApplySolution?: (solutionIndex: number) => void;
 		class?: string;
 	};
-
-	const STEP_SURFACE_BG = 'color-mix(in srgb, var(--surface-rail) 60%, var(--card))';
 
 	const UNIT_BY_KIND: Partial<Record<ComponentKind, string>> = {
 		voltage_source: 'V',
@@ -48,8 +45,6 @@
 		onApplySolution,
 		class: className
 	}: Props = $props();
-
-	let expandedDerivation = $state<string[]>([]);
 
 	const formatOpts = $derived({
 		angleDisplay: settings.angleDisplay,
@@ -293,40 +288,5 @@
 				{/if}
 			</div>
 		</div>
-	{/if}
-
-	<!-- Collapsible KaTeX Step-by-Step Derivation -->
-	{#if unknownSolution.steps.length > 0}
-		<Accordion variant="flush" type="single" bind:value={expandedDerivation}>
-			<AccordionItem
-				value="derivation"
-				title="Step-by-Step Derivation ({unknownSolution.steps.length} {unknownSolution.steps.length === 1 ? 'step' : 'steps'})"
-				triggerClass="px-4 py-2.5 lg:py-2"
-				contentClass="px-4 pt-1 pb-3.5"
-			>
-				<div class="flex min-w-0 flex-col gap-3">
-					{#each unknownSolution.steps as step, sIdx (`unknown-step-${sIdx}`)}
-						<div class="flex min-w-0 flex-col gap-1.5">
-							<div class="text-xs font-semibold text-foreground">{step.title}</div>
-							{#if step.description}
-								<p class="text-xs leading-relaxed text-muted-foreground">
-									{step.description}
-								</p>
-							{/if}
-							{#if step.latex && step.latex.length > 0}
-								<div
-									class="flex min-w-0 flex-col gap-1 overflow-hidden rounded-[4px] bg-surface-rail/60 px-2.5 py-1.5"
-									style="--math-fade-bg: {STEP_SURFACE_BG};"
-								>
-									{#each step.latex as eq, eqIdx (`unknown-step-${sIdx}-eq-${eqIdx}`)}
-										<MathBlock latex={eq} />
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			</AccordionItem>
-		</Accordion>
 	{/if}
 </section>
