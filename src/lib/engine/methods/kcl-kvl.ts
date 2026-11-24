@@ -33,6 +33,7 @@ import {
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
+	getRedundantSourceInapplicableReason,
 	latexSub,
 	verifyAgainstMna
 } from './shared';
@@ -58,6 +59,17 @@ export function solveKclKvl(doc: CircuitDocument, mna: MnaSolution): MethodResul
 			title,
 			applicable: false,
 			inapplicableReason: 'Circuit has topology or value errors; fix validation errors first.',
+			steps: []
+		};
+	}
+
+	const redundantReason = getRedundantSourceInapplicableReason(mna);
+	if (redundantReason) {
+		return {
+			methodId: 'kcl_kvl',
+			title,
+			applicable: false,
+			inapplicableReason: redundantReason,
 			steps: []
 		};
 	}

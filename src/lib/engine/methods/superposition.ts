@@ -23,6 +23,7 @@ import {
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
+	getRedundantSourceInapplicableReason,
 	latexSub,
 	remapDependentControlNodes,
 	verifyAgainstMna
@@ -328,6 +329,17 @@ export function solveSuperposition(
 			title,
 			applicable: false,
 			inapplicableReason: 'Circuit has topology or value errors; fix validation errors first.',
+			steps: []
+		};
+	}
+
+	const redundantReason = getRedundantSourceInapplicableReason(mna);
+	if (redundantReason) {
+		return {
+			methodId: 'superposition',
+			title,
+			applicable: false,
+			inapplicableReason: redundantReason,
 			steps: []
 		};
 	}

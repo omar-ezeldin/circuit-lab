@@ -14,6 +14,8 @@
 
 import { Complex } from './complex';
 import {
+	analyzeCurrentSourceCutsets,
+	analyzeVoltageSourceLoops,
 	buildElectricalGraph,
 	getPassiveImpedance,
 	parseDependentGain,
@@ -388,6 +390,33 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 	const currentSourceValues = new Map<string, Complex>();
 	const dependentCurrentExprs = new Map<string, CurrentLinearExpr>();
 
+	const vLoopAnalysis = analyzeVoltageSourceLoops(graph, mode);
+	const redundantVoltageBranches = vLoopAnalysis.redundantBranches;
+	const csCutsetAnalysis = analyzeCurrentSourceCutsets(graph, mode);
+
+	const stampRedundantVoltageBranch = (
+		auxIdx: number,
+		nodeA: string,
+		nodeB: string,
+		cycleEdges: Array<{ compId: string; sign: 1 | -1 }>
+	): void => {
+		const row = numNodes + auxIdx;
+		const a = nodeIndex.get(nodeA);
+		const bIdx = nodeIndex.get(nodeB);
+		const one = Complex.one();
+		if (a !== undefined) {
+			A[a][row] = A[a][row].add(one);
+		}
+		if (bIdx !== undefined) {
+			A[bIdx][row] = A[bIdx][row].sub(one);
+		}
+		for (const edge of cycleEdges) {
+			const edgeAux = voltageBranchAuxMap.get(edge.compId)!;
+			const col = numNodes + edgeAux;
+			A[row][col] = A[row][col].add(Complex.from(edge.sign, 0));
+		}
+	};
+
 	const resolveBranchCurrentExpr = (
 		compId: string,
 		visited: Set<string>
@@ -473,7 +502,12 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 				} else if (passive.kind === 'short') {
 					// Short circuit (0 V branch) in DC steady state
 					const auxIdx = voltageBranchAuxMap.get(comp.id)!;
-					stampVoltageSource(ctx, auxIdx, nodeA, nodeB, Complex.zero());
+					const redundant = redundantVoltageBranches.get(comp.id);
+					if (redundant) {
+						stampRedundantVoltageBranch(auxIdx, nodeA, nodeB, redundant.cycleEdges);
+					} else {
+						stampVoltageSource(ctx, auxIdx, nodeA, nodeB, Complex.zero());
+					}
 					componentImpedance.set(comp.id, Complex.zero());
 				} else {
 					const y = Complex.one().div(passive.z);
@@ -485,7 +519,12 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 			case 'voltage_source': {
 				const vs = parseSourceValue(comp, mode)!;
 				const auxIdx = voltageBranchAuxMap.get(comp.id)!;
-				stampVoltageSource(ctx, auxIdx, nodeA, nodeB, vs);
+				const redundant = redundantVoltageBranches.get(comp.id);
+				if (redundant) {
+					stampRedundantVoltageBranch(auxIdx, nodeA, nodeB, redundant.cycleEdges);
+				} else {
+					stampVoltageSource(ctx, auxIdx, nodeA, nodeB, vs);
+				}
 				componentImpedance.set(comp.id, null);
 				break;
 			}
@@ -583,6 +622,34 @@ export function solveMNA(doc: CircuitDocument, options?: SolveMnaOptions): MnaSo
 				}
 				componentImpedance.set(comp.id, null);
 				break;
+			}
+		}
+	}
+
+	// Stamp equal-voltage-split symmetry constraints on KCL-consistent series current-source nodes
+	// (only modifies internal cluster node rows; main-circuit KCL rows remain 100% untouched).
+	for (const cluster of csCutsetAnalysis.consistentClusters) {
+		for (const u of cluster.nodes) {
+			const ru = nodeIndex.get(u);
+			if (ru === undefined) continue;
+			for (let col = 0; col < dim; col++) {
+				A[ru][col] = Complex.zero();
+			}
+			b[ru] = Complex.zero();
+
+			for (const comp of activeComps) {
+				if (comp.kind !== 'current_source') continue;
+				const [nA, nB] = graph.componentNodes[comp.id] ?? [];
+				if (!nA || !nB || nA === nB) continue;
+				if (nA !== u && nB !== u) continue;
+				const other = nA === u ? nB : nA;
+				A[ru][ru] = A[ru][ru].add(Complex.one());
+				if (other !== '0') {
+					const otherIdx = nodeIndex.get(other);
+					if (otherIdx !== undefined) {
+						A[ru][otherIdx] = A[ru][otherIdx].sub(Complex.one());
+					}
+				}
 			}
 		}
 	}

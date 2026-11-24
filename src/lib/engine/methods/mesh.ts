@@ -32,6 +32,7 @@ import {
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
+	getRedundantSourceInapplicableReason,
 	latexSub,
 	verifyAgainstMna
 } from './shared';
@@ -470,6 +471,17 @@ export function solveMesh(doc: CircuitDocument, mna: MnaSolution): MethodResult 
 			title,
 			applicable: false,
 			inapplicableReason: 'Circuit has topology or value errors; fix validation errors first.',
+			steps: []
+		};
+	}
+
+	const redundantReason = getRedundantSourceInapplicableReason(mna);
+	if (redundantReason) {
+		return {
+			methodId: 'mesh',
+			title,
+			applicable: false,
+			inapplicableReason: redundantReason,
 			steps: []
 		};
 	}

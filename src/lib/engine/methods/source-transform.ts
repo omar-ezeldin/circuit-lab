@@ -27,6 +27,7 @@ import {
 	formatLatexTerm,
 	formatLatexValue,
 	getPassiveImpedance,
+	getRedundantSourceInapplicableReason,
 	hasDependentSources,
 	latexSub,
 	verifyAgainstMna
@@ -153,6 +154,17 @@ export function solveSourceTransform(
 			title,
 			applicable: false,
 			inapplicableReason: 'Circuit has topology or value errors; fix validation errors first.',
+			steps: []
+		};
+	}
+
+	const redundantReason = getRedundantSourceInapplicableReason(mna);
+	if (redundantReason) {
+		return {
+			methodId: 'source_transform',
+			title,
+			applicable: false,
+			inapplicableReason: redundantReason,
 			steps: []
 		};
 	}
