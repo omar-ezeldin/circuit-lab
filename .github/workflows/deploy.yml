@@ -47,12 +47,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     env:
-      STAGING_SLUG: ${{ vars.STAGING_SLUG || 'cl-7r4n9x2k' }}
+      STAGING_SLUG: ${{ secrets.STAGING_SLUG }}
     steps:
       - name: Validate STAGING_SLUG
         run: |
-          if [[ ! "${STAGING_SLUG}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo "::error::Invalid STAGING_SLUG '${STAGING_SLUG}'. Must match ^[a-zA-Z0-9_-]+$."
+          if [ -n "${STAGING_SLUG}" ] && [[ ! "${STAGING_SLUG}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo "::error::Invalid STAGING_SLUG secret format. Must match ^[a-zA-Z0-9_-]+$."
             exit 1
           fi
 
@@ -62,10 +62,10 @@ jobs:
           ref: main
           path: src-prod
 
-      - name: Check whether staging branch exists
+      - name: Check whether staging should deploy
         id: check_staging
         run: |
-          if git -C src-prod ls-remote --exit-code --heads origin staging >/dev/null 2>&1; then
+          if [ -n "${STAGING_SLUG}" ] && git -C src-prod ls-remote --exit-code --heads origin staging >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -135,9 +135,9 @@ jobs:
             echo "| :--- | :--- | :--- | :--- |"
             echo "| Production | \`main\` | \`${PROD_SHA}\` | ${BASE_URL}/ |"
             if [ "${STAGING_EXISTS}" = "true" ]; then
-              echo "| Staging | \`staging\` | \`${STAGING_SHA}\` | ${BASE_URL}/${STAGING_SLUG}/ |"
+              echo "| Staging | \`staging\` | \`${STAGING_SHA}\` | _private (configured via secret)_ |"
             else
-              echo "| Staging | \`staging\` | _not present_ | _skipped_ |"
+              echo "| Staging | \`staging\` | _not deployed_ | _skipped_ |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
