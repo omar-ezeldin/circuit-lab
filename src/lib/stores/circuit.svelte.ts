@@ -1317,6 +1317,12 @@ class CircuitStore {
 		this._activeTool = 'select';
 		this._activeSourceMode = cloned.mode;
 
+		if (cloned.acMagnitudeMode === 'peak' || cloned.acMagnitudeMode === 'rms') {
+			settings.useAcMagnitudeModeForSession(cloned.acMagnitudeMode);
+		} else {
+			settings.clearSessionAcMagnitudeMode();
+		}
+
 		if (cloned.components.length > 0) {
 			this._emptyBannerDismissed = false;
 		}
@@ -1413,12 +1419,12 @@ class CircuitStore {
 			return;
 		}
 		this.recordSnapshot();
+		settings.clearSessionAcMagnitudeMode();
 		this._document = {
 			schemaVersion: 1,
 			name: 'Untitled Circuit',
 			mode: this._document.mode,
 			frequencyHz: this._document.frequencyHz,
-			acMagnitudeMode: this._document.acMagnitudeMode,
 			components: [],
 			wires: []
 		};
@@ -1668,6 +1674,14 @@ class CircuitStore {
 		this._emptyBannerDismissed = false;
 		this._undoStack = [];
 		this._redoStack = [];
+		if (
+			initialPreset.document.acMagnitudeMode === 'peak' ||
+			initialPreset.document.acMagnitudeMode === 'rms'
+		) {
+			settings.useAcMagnitudeModeForSession(initialPreset.document.acMagnitudeMode);
+		} else {
+			settings.clearSessionAcMagnitudeMode();
+		}
 	}
 }
 

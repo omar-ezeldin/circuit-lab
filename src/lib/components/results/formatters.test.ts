@@ -212,4 +212,12 @@ describe('results formatters', () => {
 		expect(formatApparentPower(0.5, { precision: 3, unitSystem: 'kohm-v-ma' })).toBe('500 mVA');
 		expect(formatApparentPower(2e-4, { precision: 3, unitSystem: 'mohm-v-ua' })).toBe('200 µVA');
 	});
+
+	it('renders explicit 1 for unit-magnitude imaginary terms with units while keeping dimensionless j / -j', () => {
+		expect(formatRectangularQuantity(Complex.from(0, -1000), 'V', 3)).toBe('-j1 kV');
+		expect(formatRectangularQuantity(Complex.from(0, 1), 'Ω', 3)).toBe('j1 Ω');
+		expect(formatRectangularQuantity(Complex.from(2, -1), 'Ω', 3)).toBe('2 - j1 Ω');
+		expect(formatRectangularQuantity(Complex.from(0, 1), '', 3)).toBe('j');
+		expect(formatRectangularQuantity(Complex.from(0, -1), '', 3)).toBe('-j');
+	});
 });
