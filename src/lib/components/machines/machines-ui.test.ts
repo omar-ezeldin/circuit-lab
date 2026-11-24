@@ -100,6 +100,39 @@ describe('Machines UI Components', () => {
 		}
 	});
 
+	it('renders MachineSolutionPanel answer cards with data-answer-card, min-w-0, overflow-hidden, math-inline, and zero overflow-x-auto across all 14 topics', () => {
+		for (const qtId of ALL_QUESTION_TYPES) {
+			const meta = MACHINE_QUESTION_TYPES[qtId];
+			const solved = solveMachineQuestion(qtId, meta.presets[0].input as never);
+			expect(solved.valid, `${qtId} default preset must solve cleanly`).toBe(true);
+
+			const { body } = render(MachineSolutionPanel, {
+				props: {
+					result: solved,
+					meta
+				}
+			});
+
+			const cardMatches = [...body.matchAll(/<div\b[^>]*data-answer-card[^>]*>/g)];
+			expect(cardMatches.length, `${qtId} should render data-answer-card elements`).toBeGreaterThan(0);
+
+			for (const match of cardMatches) {
+				const tag = match[0];
+				expect(tag, `${qtId} answer card must include min-w-0`).toContain('min-w-0');
+				expect(tag, `${qtId} answer card must include overflow-hidden`).toContain('overflow-hidden');
+			}
+
+			const inlineMathMatches = [...body.matchAll(/<span\b[^>]*math-inline[^>]*>/g)];
+			expect(inlineMathMatches.length, `${qtId} should render math-inline symbols`).toBeGreaterThan(0);
+			for (const match of inlineMathMatches) {
+				expect(match[0], `${qtId} inline math must never include overflow-x-auto`).not.toContain(
+					'overflow-x-auto'
+				);
+			}
+			expect(body, `${qtId} must have zero KaTeX parse errors`).not.toContain('katex-error');
+		}
+	});
+
 	it('renders MachineDiagram for all 5 categories using theme tokens (no hardcoded hex colors)', () => {
 		for (const cat of MACHINE_CATEGORIES) {
 			const { body } = render(MachineDiagram, {

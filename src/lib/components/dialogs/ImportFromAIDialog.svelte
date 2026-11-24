@@ -8,7 +8,7 @@
 		ChevronDown,
 		Copy,
 		FlaskConical,
-		ScanLine
+		Sparkles
 	} from 'lucide-svelte';
 	import { Button, Dialog } from '$lib/components/ui';
 	import { AI_CIRCUIT_IMPORT_PROMPT, parseCircuitImport } from '$lib/engine/io';
@@ -186,7 +186,7 @@
 				<span class="font-engineering mt-0.5 shrink-0 text-[11px] font-semibold text-muted-foreground">
 					02
 				</span>
-				<ScanLine class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+				<Sparkles class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
 				<p class="text-xs leading-relaxed text-foreground">
 					Attach your circuit photo or textbook screenshot along with this prompt in ChatGPT,
 					Claude, or Gemini.

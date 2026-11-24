@@ -239,26 +239,32 @@
 
 		{#if isAc}
 			<div class="grid grid-cols-2 gap-2">
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						Real Power (P)
 					</div>
-					<div class="mt-0.5 font-engineering text-sm font-semibold tabular-nums text-foreground">
+					<div class="mt-0.5 min-w-0 font-engineering text-sm font-semibold tabular-nums text-foreground break-words">
 						{formatRealPower(acPowerMetrics.pAbs, formatOpts)}
 					</div>
-					<div class="mt-0.5 font-engineering text-[10px] text-branch-current">
+					<div class="mt-0.5 min-w-0 font-engineering text-[10px] text-branch-current break-words">
 						Supplied {formatRealPower(acPowerMetrics.pSup, formatOpts)}
 					</div>
 				</div>
 
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						Reactive Power (Q)
 					</div>
-					<div class="mt-0.5 font-engineering text-sm font-semibold tabular-nums text-foreground">
+					<div class="mt-0.5 min-w-0 font-engineering text-sm font-semibold tabular-nums text-foreground break-words">
 						{formatReactivePower(acPowerMetrics.qLoad, formatOpts)}
 					</div>
-					<div class="mt-0.5 text-[10px] text-muted-foreground">
+					<div class="mt-0.5 min-w-0 text-[10px] text-muted-foreground break-words">
 						{Math.abs(acPowerMetrics.qLoad) < 1e-12
 							? 'Purely resistive'
 							: acPowerMetrics.qLoad > 0
@@ -267,40 +273,52 @@
 					</div>
 				</div>
 
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						Apparent Power (|S|)
 					</div>
-					<div class="mt-0.5 font-engineering text-sm font-semibold tabular-nums text-foreground">
+					<div class="mt-0.5 min-w-0 font-engineering text-sm font-semibold tabular-nums text-foreground break-words">
 						{formatApparentPower(acPowerMetrics.sApp, formatOpts)}
 					</div>
 				</div>
 
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						Power Factor (cos θ)
 					</div>
-					<div class="mt-0.5 font-engineering text-sm font-semibold tabular-nums text-voltage">
+					<div class="mt-0.5 min-w-0 font-engineering text-sm font-semibold tabular-nums text-voltage break-words">
 						{formatPowerFactor(acPowerMetrics.pf, acPowerMetrics.pfType)}
 					</div>
 				</div>
 			</div>
 		{:else}
 			<div class="grid grid-cols-2 gap-2">
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						Total Supplied
 					</div>
-					<div class="mt-0.5 font-engineering text-sm font-semibold tabular-nums text-branch-current">
+					<div class="mt-0.5 min-w-0 font-engineering text-sm font-semibold tabular-nums text-branch-current break-words">
 						{formatRealPower(mna.powerBalance.totalSuppliedReal, formatOpts)}
 					</div>
 				</div>
 
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						Total Absorbed
 					</div>
-					<div class="mt-0.5 font-engineering text-sm font-semibold tabular-nums text-foreground">
+					<div class="mt-0.5 min-w-0 font-engineering text-sm font-semibold tabular-nums text-foreground break-words">
 						{formatRealPower(mna.powerBalance.totalAbsorbedReal, formatOpts)}
 					</div>
 				</div>
@@ -326,10 +344,11 @@
 					{@const isSelected = selectedComponentId === vm.componentId}
 					<button
 						type="button"
+						data-result-card
 						data-selected={isSelected ? 'true' : undefined}
 						onclick={() => onSelectComponent?.(vm.componentId)}
 						class={cn(
-							'flex min-h-11 w-full flex-col justify-between gap-1 rounded-[4px] border px-3 py-2.5 text-left transition-colors duration-150',
+							'flex min-h-11 w-full min-w-0 flex-col justify-between gap-1 overflow-hidden rounded-[4px] border px-3 py-2.5 text-left transition-colors duration-150',
 							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 							onSelectComponent && 'cursor-pointer',
 							isSelected
@@ -337,19 +356,19 @@
 								: 'border-voltage/30 bg-voltage/5 hover:bg-voltage/10'
 						)}
 					>
-						<div class="flex items-baseline justify-between gap-2">
-							<span class="font-engineering text-xs font-semibold text-foreground">
+						<div class="flex min-w-0 items-baseline justify-between gap-2">
+							<span class="font-engineering shrink-0 text-xs font-semibold text-foreground">
 								{vm.label}
 							</span>
-							<span class="font-engineering text-[10px] text-muted-foreground">
+							<span class="min-w-0 truncate font-engineering text-[10px] text-muted-foreground">
 								{vm.nodeA === '0' ? 'GND' : vm.nodeA} (+) → {vm.nodeB === '0' ? 'GND' : vm.nodeB} (−)
 							</span>
 						</div>
-						<div class="font-engineering text-sm font-semibold tabular-nums text-voltage">
+						<div class="min-w-0 font-engineering text-sm font-semibold tabular-nums text-voltage break-words">
 							{vParts.primary}
 						</div>
 						{#if vParts.secondary}
-							<div class="font-engineering text-[11px] tabular-nums text-muted-foreground">
+							<div class="min-w-0 font-engineering text-[11px] tabular-nums text-muted-foreground break-words">
 								{vParts.secondary}
 							</div>
 						{/if}
@@ -382,29 +401,30 @@
 					{@const isHighlighted = highlightedNodeId === node.nodeId}
 					<button
 						type="button"
+						data-result-card
 						aria-pressed={isHighlighted}
 						onclick={() => handleNodeCardClick(node)}
 						class={cn(
-							'flex min-h-11 flex-col justify-between gap-0.5 rounded-[4px] border px-2.5 py-2 text-left transition-colors duration-150',
+							'flex min-h-11 min-w-0 flex-col justify-between gap-0.5 overflow-hidden rounded-[4px] border px-2.5 py-2 text-left transition-colors duration-150',
 							'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 							isHighlighted
 								? 'border-voltage/60 bg-voltage/10'
 								: 'border-border bg-card hover:bg-accent/40'
 						)}
 					>
-						<div class="flex items-baseline justify-between gap-1">
-							<span class="font-engineering text-xs font-semibold text-foreground">
+						<div class="flex min-w-0 items-baseline justify-between gap-1">
+							<span class="font-engineering shrink-0 text-xs font-semibold text-foreground">
 								V<sub>{node.nodeId}</sub>
 							</span>
-							<span class="truncate font-engineering text-[10px] text-muted-foreground">
+							<span class="min-w-0 truncate font-engineering text-[10px] text-muted-foreground">
 								{pinsShort}
 							</span>
 						</div>
-						<div class="mt-0.5 font-engineering text-xs font-semibold tabular-nums text-voltage break-words">
+						<div class="mt-0.5 min-w-0 font-engineering text-xs font-semibold tabular-nums text-voltage break-words">
 							{vParts.primary}
 						</div>
 						{#if vParts.secondary}
-							<div class="font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
+							<div class="min-w-0 font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
 								{vParts.secondary}
 							</div>
 						{/if}
@@ -496,11 +516,12 @@
 				{@const isSelected = selectedComponentId === branch.componentId}
 				<button
 					type="button"
+					data-result-card
 					data-selected={isSelected ? 'true' : undefined}
 					aria-pressed={onSelectComponent ? isSelected : undefined}
 					onclick={() => onSelectComponent?.(branch.componentId)}
 					class={cn(
-						'min-h-11 w-full rounded-[4px] border px-3 py-2.5 text-left transition-colors duration-150',
+						'min-h-11 w-full min-w-0 overflow-hidden rounded-[4px] border px-3 py-2.5 text-left transition-colors duration-150',
 						'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
 						onSelectComponent && 'cursor-pointer',
 						isSelected
@@ -635,39 +656,48 @@
 			</div>
 
 			<div class="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-3">
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-2.5 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-2.5 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						V<sub>th</sub> (Open-Circuit)
 					</div>
-					<div class="mt-0.5 font-engineering text-xs font-semibold tabular-nums text-voltage break-words">
+					<div class="mt-0.5 min-w-0 font-engineering text-xs font-semibold tabular-nums text-voltage break-words">
 						{vthParts.primary}
 					</div>
 					{#if vthParts.secondary}
-						<div class="font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
+						<div class="min-w-0 font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
 							{vthParts.secondary}
 						</div>
 					{/if}
 				</div>
 
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-2.5 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-2.5 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						{#if isAc}Z<sub>th</sub> (Impedance){:else}R<sub>th</sub> (Resistance){/if}
 					</div>
-					<div class="mt-0.5 font-engineering text-xs font-semibold tabular-nums text-foreground break-words">
+					<div class="mt-0.5 min-w-0 font-engineering text-xs font-semibold tabular-nums text-foreground break-words">
 						{zthParts ? zthParts.primary : 'Open / Dependent'}
 					</div>
 					{#if zthParts?.secondary}
-						<div class="font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
+						<div class="min-w-0 font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
 							{zthParts.secondary}
 						</div>
 					{/if}
 				</div>
 
-				<div class="rounded-[4px] border border-border bg-surface-rail/40 px-2.5 py-2">
+				<div
+					data-result-card
+					class="min-w-0 overflow-hidden rounded-[4px] border border-border bg-surface-rail/40 px-2.5 py-2"
+				>
 					<div class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 						I<sub>N</sub> (Norton)
 					</div>
-					<div class="mt-0.5 font-engineering text-xs font-semibold tabular-nums text-branch-current break-words">
+					<div class="mt-0.5 min-w-0 font-engineering text-xs font-semibold tabular-nums text-branch-current break-words">
 						{#if iscParts}
 							{iscParts.primary}
 						{:else}
@@ -675,7 +705,7 @@
 						{/if}
 					</div>
 					{#if iscParts?.secondary}
-						<div class="font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
+						<div class="min-w-0 font-engineering text-[10px] tabular-nums text-muted-foreground break-words">
 							{iscParts.secondary}
 						</div>
 					{/if}
@@ -689,14 +719,17 @@
 					mna.mode,
 					formatOpts
 				)}
-				<div class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-[4px] border border-border bg-surface-rail/30 px-2.5 py-1.5 text-xs">
+				<div
+					data-result-card
+					class="mt-2.5 flex min-w-0 flex-wrap items-center justify-between gap-2 overflow-hidden rounded-[4px] border border-border bg-surface-rail/30 px-2.5 py-1.5 text-xs"
+				>
 					<span class="text-muted-foreground">Max Power Transfer</span>
-					<div class="font-engineering flex flex-wrap items-center gap-x-2 gap-y-0.5 text-foreground">
-						<span class="whitespace-nowrap">
+					<div class="font-engineering flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-foreground">
+						<span class="min-w-0 break-words">
 							{#if isAc}Z<sub>L,opt</sub>{:else}R<sub>L,opt</sub>{/if} = {zOptParts.primary}
 						</span>
 						<span class="text-muted-foreground" aria-hidden="true">·</span>
-						<span class="whitespace-nowrap font-semibold text-branch-current">
+						<span class="min-w-0 font-semibold text-branch-current break-words">
 							P<sub>max</sub> = {formatRealPower(tn.maxPowerTransfer.maxRealPowerW, formatOpts)}
 						</span>
 					</div>

@@ -113,7 +113,7 @@
 {:else}
 	<span
 		class={cn(
-			'math-block inline-block max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] align-middle text-[0.78rem] text-foreground sm:text-[0.82rem]',
+			'math-block math-inline inline-flex max-w-full items-center align-middle leading-none text-[0.78rem] text-foreground sm:text-[0.82rem]',
 			className
 		)}
 	>
@@ -130,6 +130,17 @@
 		.math-block :global(.katex) {
 			font-size: 0.98em;
 		}
+	}
+
+	.math-inline {
+		overflow: visible;
+		padding-inline: 1px;
+	}
+
+	.math-block.math-inline :global(.katex) {
+		font-size: 1em;
+		line-height: 1.15;
+		white-space: nowrap;
 	}
 
 	.math-block :global(.katex-display) {
