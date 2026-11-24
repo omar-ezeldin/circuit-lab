@@ -1,11 +1,32 @@
+<script module lang="ts">
+	export interface CustomPhasor {
+		id: string;
+		label: string;
+		kind: 'voltage' | 'current';
+		magnitude: number;
+		angleDeg: number;
+		unit: string;
+		formatted?: string;
+	}
+</script>
+
 <script lang="ts">
+	import { Complex } from '$lib/engine/complex';
 	import type { FullSolveResult } from '$lib/engine/types';
+	import { formatEngineeringWithSystem } from '$lib/engine/units';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { cn } from '$lib/utils';
-	import { formatComplexValue, formatPolarQuantity } from './formatters';
+	import {
+		formatComplexValue,
+		formatPolarQuantity,
+		formatRectangularQuantity
+	} from './formatters';
+
+	type FilterMode = 'all' | 'voltages' | 'currents';
 
 	type Props = {
-		solution: FullSolveResult;
+		solution?: FullSolveResult | null;
+		customPhasors?: CustomPhasor[];
 		selectedComponentId?: string | null;
 		onSelectComponent?: (id: string) => void;
 		class?: string;
@@ -25,32 +46,49 @@
 		labelY: number;
 		formatted: string;
 		formattedPolar: string;
+		magnitudeDisplay: string;
+		angleDisplay: string;
+		rectDisplay: string;
 	}
 
 	let {
-		solution,
+		solution = null,
+		customPhasors,
 		selectedComponentId = null,
 		onSelectComponent,
 		class: className
 	}: Props = $props();
 
-	let showVoltages = $state(true);
-	let showCurrents = $state(true);
+	let filterMode = $state<FilterMode>('all');
 	let hoveredKey = $state<string | null>(null);
 
 	const CX = 160;
 	const CY = 160;
 	const MAX_R = 96;
-	// Arrowhead footprint used for label avoidance (marker 6 units × hovered stroke 2.75).
 	const ARROW_LEN = 16;
 	const ARROW_HALF_W = 6;
-	// Matches the SVG's solid `bg-background` so label halos blend seamlessly into the diagram.
 	const LABEL_HALO_COLOR = 'var(--background)';
+	const LABEL_BOX_H = 12;
+
+	// Guide ray angles in degrees (30°, 45°, 60°, 120°, 135°, 150°)
+	const GUIDE_ANGLES_30 = [30, 60, 120, 150];
+	const GUIDE_ANGLES_45 = [45, 135];
+
+	function splitSubscriptLabel(label: string): { base: string; sub: string | null } {
+		const idx = label.indexOf('_');
+		if (idx <= 0 || idx === label.length - 1) {
+			return { base: label, sub: null };
+		}
+		return {
+			base: label.slice(0, idx),
+			sub: label.slice(idx + 1).replaceAll('_', '')
+		};
+	}
 
 	function labelBoxWidth(label: string): number {
-		return label.length * 5.8 + 4;
+		const { base, sub } = splitSubscriptLabel(label);
+		return base.length * 5.8 + (sub ? sub.length * 4.4 : 0) + 4;
 	}
-	const LABEL_BOX_H = 12;
 
 	function normalizeDeg(deg: number): number {
 		let d = deg % 360;
@@ -61,6 +99,14 @@
 
 	function angleDiffDeg(a: number, b: number): number {
 		return Math.abs(normalizeDeg(a - b));
+	}
+
+	function formatAngleStr(deg: number, prec: number): string {
+		const normalized = normalizeDeg(deg);
+		const cleaned = Math.abs(normalized) < 1e-9 ? 0 : normalized;
+		if (cleaned === 0) return '0°';
+		const rounded = Number(cleaned.toPrecision(prec));
+		return `${rounded}°`;
 	}
 
 	interface SvgRect {
@@ -118,24 +164,93 @@
 		return t0 <= t1;
 	}
 
+	const showVoltages = $derived(filterMode === 'all' || filterMode === 'voltages');
+	const showCurrents = $derived(filterMode === 'all' || filterMode === 'currents');
+
 	const phasorData = $derived.by(() => {
-		const mna = solution.mna;
 		const prec = settings.precision;
 		const angleDisplay = settings.angleDisplay;
 		const unitSystem = settings.unitSystem;
 
-		const rawVoltages = Object.values(mna.nodeVoltages)
-			.filter((n) => !n.isReference && n.voltage.abs() > 1e-12)
-			.sort((a, b) => a.nodeId.localeCompare(b.nodeId, undefined, { numeric: true }));
+		interface SourceVector {
+			key: string;
+			label: string;
+			category: 'voltage' | 'current';
+			componentId?: string;
+			complex: Complex;
+			unit: string;
+			magnitude: number;
+			angleDeg: number;
+			rad: number;
+			customFormatted?: string;
+		}
 
-		const rawCurrents = Object.values(mna.branches)
-			.filter((b) => b.current.abs() > 1e-12)
-			.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+		const voltageSources: SourceVector[] = [];
+		const currentSources: SourceVector[] = [];
 
-		const maxV = rawVoltages.reduce((m, n) => Math.max(m, n.voltage.abs()), 0);
-		const maxI = rawCurrents.reduce((m, b) => Math.max(m, b.current.abs()), 0);
+		if (customPhasors) {
+			for (const p of customPhasors) {
+				if (!Number.isFinite(p.magnitude) || p.magnitude <= 1e-12) continue;
+				const rad = (p.angleDeg * Math.PI) / 180;
+				const c = Complex.fromPolar(p.magnitude, p.angleDeg);
+				const vec: SourceVector = {
+					key: `${p.kind === 'voltage' ? 'V' : 'I'}:${p.id}`,
+					label: p.label,
+					category: p.kind,
+					complex: c,
+					unit: p.unit,
+					magnitude: p.magnitude,
+					angleDeg: normalizeDeg(p.angleDeg),
+					rad,
+					customFormatted: p.formatted
+				};
+				if (p.kind === 'voltage') {
+					voltageSources.push(vec);
+				} else {
+					currentSources.push(vec);
+				}
+			}
+		} else if (solution) {
+			const mna = solution.mna;
+			const rawVoltages = Object.values(mna.nodeVoltages)
+				.filter((n) => !n.isReference && n.voltage.abs() > 1e-12)
+				.sort((a, b) => a.nodeId.localeCompare(b.nodeId, undefined, { numeric: true }));
 
-		// Pass 1: compute all visible vector geometries so label placement knows every shaft
+			for (const node of rawVoltages) {
+				voltageSources.push({
+					key: `V:${node.nodeId}`,
+					label: `V_${node.nodeId}`,
+					category: 'voltage',
+					complex: node.voltage,
+					unit: 'V',
+					magnitude: node.voltage.abs(),
+					angleDeg: node.voltage.argDeg(),
+					rad: node.voltage.argRad()
+				});
+			}
+
+			const rawCurrents = Object.values(mna.branches)
+				.filter((b) => b.current.abs() > 1e-12)
+				.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+
+			for (const branch of rawCurrents) {
+				currentSources.push({
+					key: `I:${branch.componentId}`,
+					label: `I_${branch.label}`,
+					category: 'current',
+					componentId: branch.componentId,
+					complex: branch.current,
+					unit: 'A',
+					magnitude: branch.current.abs(),
+					angleDeg: branch.current.argDeg(),
+					rad: branch.current.argRad()
+				});
+			}
+		}
+
+		const maxV = voltageSources.reduce((m, v) => Math.max(m, v.magnitude), 0);
+		const maxI = currentSources.reduce((m, i) => Math.max(m, i.magnitude), 0);
+
 		interface RawVectorItem {
 			key: string;
 			label: string;
@@ -150,69 +265,63 @@
 			y2: number;
 			formatted: string;
 			formattedPolar: string;
+			magnitudeDisplay: string;
+			angleDisplay: string;
+			rectDisplay: string;
 		}
 
 		const rawItems: RawVectorItem[] = [];
 
-		if (showVoltages && maxV > 0) {
-			for (const node of rawVoltages) {
-				const mag = node.voltage.abs();
-				const deg = node.voltage.argDeg();
-				const rad = node.voltage.argRad();
-				const norm = Math.max(0.18, mag / maxV);
-				const r = norm * MAX_R;
-				rawItems.push({
-					key: `V:${node.nodeId}`,
-					label: `V_${node.nodeId}`,
-					category: 'voltage',
-					magnitude: mag,
-					angleDeg: deg,
-					rad,
-					normalizedRadius: norm,
-					r,
-					x2: CX + r * Math.cos(rad),
-					y2: CY - r * Math.sin(rad),
-					formatted: formatComplexValue(node.voltage, 'V', 'ac', {
-						precision: prec,
-						angleDisplay,
-						unitSystem
-					}),
-					formattedPolar: formatPolarQuantity(node.voltage, 'V', prec, unitSystem)
+		function pushVector(src: SourceVector, maxMag: number) {
+			const norm = Math.max(0.18, src.magnitude / maxMag);
+			const r = norm * MAX_R;
+			const formattedPolar =
+				src.customFormatted ?? formatPolarQuantity(src.complex, src.unit, prec, unitSystem);
+			const formatted =
+				src.customFormatted ??
+				formatComplexValue(src.complex, src.unit, 'ac', {
+					precision: prec,
+					angleDisplay,
+					unitSystem
 				});
-			}
+			const magnitudeDisplay = formatEngineeringWithSystem(
+				src.magnitude,
+				src.unit,
+				prec,
+				unitSystem
+			);
+			const angleStr = formatAngleStr(src.angleDeg, prec);
+			const rectDisplay = formatRectangularQuantity(src.complex, src.unit, prec, unitSystem);
+
+			rawItems.push({
+				key: src.key,
+				label: src.label,
+				category: src.category,
+				componentId: src.componentId,
+				magnitude: src.magnitude,
+				angleDeg: src.angleDeg,
+				rad: src.rad,
+				normalizedRadius: norm,
+				r,
+				x2: CX + r * Math.cos(src.rad),
+				y2: CY - r * Math.sin(src.rad),
+				formatted,
+				formattedPolar,
+				magnitudeDisplay,
+				angleDisplay: angleStr,
+				rectDisplay
+			});
 		}
 
+		if (showVoltages && maxV > 0) {
+			for (const v of voltageSources) pushVector(v, maxV);
+		}
 		if (showCurrents && maxI > 0) {
-			for (const branch of rawCurrents) {
-				const mag = branch.current.abs();
-				const deg = branch.current.argDeg();
-				const rad = branch.current.argRad();
-				const norm = Math.max(0.18, mag / maxI);
-				const r = norm * MAX_R;
-				rawItems.push({
-					key: `I:${branch.componentId}`,
-					label: `I_${branch.label}`,
-					category: 'current',
-					componentId: branch.componentId,
-					magnitude: mag,
-					angleDeg: deg,
-					rad,
-					normalizedRadius: norm,
-					r,
-					x2: CX + r * Math.cos(rad),
-					y2: CY - r * Math.sin(rad),
-					formatted: formatComplexValue(branch.current, 'A', 'ac', {
-						precision: prec,
-						angleDisplay,
-						unitSystem
-					}),
-					formattedPolar: formatPolarQuantity(branch.current, 'A', prec, unitSystem)
-				});
-			}
+			for (const i of currentSources) pushVector(i, maxI);
 		}
 
 		const placedLabels: SvgRect[] = [
-			// Axis labels (0°, 90°, 180°, -90°) + origin dot
+			// Axis labels (0°, 90°, 180°, 270°) + origin dot
 			{ x1: CX + MAX_R + 10, y1: CY - 8, x2: CX + MAX_R + 30, y2: CY + 8 },
 			{ x1: CX - 14, y1: CY - MAX_R - 24, x2: CX + 14, y2: CY - MAX_R - 6 },
 			{ x1: CX - MAX_R - 36, y1: CY - 8, x2: CX - MAX_R - 10, y2: CY + 8 },
@@ -283,9 +392,6 @@
 					} else if (segmentIntersectsRect(CX, CY, seg.x2, seg.y2, rect, 3)) {
 						score += 180;
 					}
-					// Labels paint above all shafts with a solid halo, so keep them well clear of
-					// other vectors' arrowheads (marker reaches ~ARROW_LEN back from the tip and is
-					// ~ARROW_HALF_W wide when hovered). The own arrowhead is covered by the shaft check.
 					if (seg.key !== item.key) {
 						const tipBackX = seg.x2 - ARROW_LEN * Math.cos(seg.rad);
 						const tipBackY = seg.y2 + ARROW_LEN * Math.sin(seg.rad);
@@ -310,7 +416,6 @@
 			return { lx: bestX, ly: bestY };
 		}
 
-		// Pass 2: place labels using full knowledge of all vector shafts
 		const entries: PhasorEntry[] = rawItems.map((item) => {
 			const { lx, ly } = placeVectorLabel(item);
 			return {
@@ -326,11 +431,18 @@
 				labelX: lx,
 				labelY: ly,
 				formatted: item.formatted,
-				formattedPolar: item.formattedPolar
+				formattedPolar: item.formattedPolar,
+				magnitudeDisplay: item.magnitudeDisplay,
+				angleDisplay: item.angleDisplay,
+				rectDisplay: item.rectDisplay
 			};
 		});
 
-		return { entries, maxV, maxI };
+		return {
+			entries,
+			voltageCount: voltageSources.length,
+			currentCount: currentSources.length
+		};
 	});
 
 	const activeEntry = $derived.by(() => {
@@ -349,41 +461,64 @@
 </script>
 
 <div class={cn('flex min-w-0 flex-col gap-3', className)}>
+	<!-- Filter Pills: All | Voltages | Currents -->
 	<div class="flex flex-wrap items-center justify-between gap-2">
-		<div class="flex flex-wrap items-center gap-1.5">
+		<div
+			role="radiogroup"
+			aria-label="Filter phasor vectors"
+			class="inline-flex w-full shrink-0 items-center rounded-[4px] border border-border bg-muted/80 p-0.5 sm:w-auto"
+		>
 			<button
 				type="button"
-				onclick={() => (showVoltages = !showVoltages)}
-				aria-pressed={showVoltages}
+				role="radio"
+				aria-checked={filterMode === 'all'}
+				onclick={() => (filterMode = 'all')}
 				class={cn(
-					'inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-[4px] border px-3 py-2 text-xs font-medium transition-colors duration-150 sm:min-h-0 sm:px-2 sm:py-1 sm:text-[11px]',
-					'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-					showVoltages
-						? 'border-voltage/45 bg-voltage/10 text-voltage'
-						: 'border-border bg-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground'
+					'inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-1 rounded-[3px] border px-2.5 text-xs transition-colors duration-150 sm:flex-initial lg:min-h-0 lg:h-6 lg:px-2 lg:text-[11px]',
+					'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+					filterMode === 'all'
+						? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+						: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 				)}
 			>
-				<span class="size-2 rounded-full bg-voltage" aria-hidden="true"></span>
-				Voltages (V)
+				<span>All</span>
 			</button>
 			<button
 				type="button"
-				onclick={() => (showCurrents = !showCurrents)}
-				aria-pressed={showCurrents}
+				role="radio"
+				aria-checked={filterMode === 'voltages'}
+				onclick={() => (filterMode = 'voltages')}
 				class={cn(
-					'inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-[4px] border px-3 py-2 text-xs font-medium transition-colors duration-150 sm:min-h-0 sm:px-2 sm:py-1 sm:text-[11px]',
-					'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-					showCurrents
-						? 'border-branch-current/45 bg-branch-current/10 text-branch-current'
-						: 'border-border bg-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground'
+					'inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border px-2.5 text-xs transition-colors duration-150 sm:flex-initial lg:min-h-0 lg:h-6 lg:px-2 lg:text-[11px]',
+					'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+					filterMode === 'voltages'
+						? 'border-voltage/40 bg-card font-semibold text-voltage shadow-2xs'
+						: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 				)}
 			>
-				<span class="size-2 rounded-full bg-branch-current" aria-hidden="true"></span>
-				Currents (I)
+				<span class="size-1.5 shrink-0 rounded-full bg-voltage" aria-hidden="true"></span>
+				<span>Voltages</span>
+			</button>
+			<button
+				type="button"
+				role="radio"
+				aria-checked={filterMode === 'currents'}
+				onclick={() => (filterMode = 'currents')}
+				class={cn(
+					'inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-[3px] border px-2.5 text-xs transition-colors duration-150 sm:flex-initial lg:min-h-0 lg:h-6 lg:px-2 lg:text-[11px]',
+					'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+					filterMode === 'currents'
+						? 'border-branch-current/40 bg-card font-semibold text-branch-current shadow-2xs'
+						: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
+				)}
+			>
+				<span class="size-1.5 shrink-0 rounded-full bg-branch-current" aria-hidden="true"></span>
+				<span>Currents</span>
 			</button>
 		</div>
 
 		{#if activeEntry}
+			{@const activeParts = splitSubscriptLabel(activeEntry.label)}
 			<div
 				class="font-engineering flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-[4px] border border-border bg-surface-rail/60 px-2.5 py-1 text-[11px] text-foreground sm:w-auto sm:px-2 sm:py-0.5"
 			>
@@ -393,18 +528,19 @@
 						activeEntry.category === 'voltage' ? 'text-voltage' : 'text-branch-current'
 					)}
 				>
-					{activeEntry.label}
+					{activeParts.base}{#if activeParts.sub}<sub>{activeParts.sub}</sub>{/if}
 				</span>
 				<span class="min-w-0 break-words">{activeEntry.formatted}</span>
 			</div>
 		{:else}
-			<span class="w-full text-[11px] text-muted-foreground sm:w-auto">
-				Normalized independently · Tap or hover phasors
+			<span class="text-[11px] text-muted-foreground">
+				Normalized per group · Hover or tap vector
 			</span>
 		{/if}
 	</div>
 
 	<div class="flex flex-col gap-3">
+		<!-- Crisp Polar Plot -->
 		<div class="mx-auto w-full max-w-[300px] sm:max-w-[280px]">
 			<svg
 				viewBox="0 0 320 320"
@@ -414,8 +550,8 @@
 			>
 				<title>AC Polar Phasor Diagram</title>
 				<desc>
-					Concentric polar reference rings with 0, 90, 180, and -90 degree axes. Voltage phasors
-					are drawn in cobalt blue and current phasors in emerald green.
+					Concentric polar reference rings with 0, 90, 180, and 270 degree axes and 30/45 degree
+					guides. Voltage phasors are drawn in cobalt blue and current phasors in emerald green.
 				</desc>
 
 				<defs>
@@ -456,27 +592,36 @@
 					/>
 				{/each}
 
-				<!-- Diagonal 45° / 135° axes -->
-				<line
-					x1={CX - MAX_R * 0.707}
-					y1={CY - MAX_R * 0.707}
-					x2={CX + MAX_R * 0.707}
-					y2={CY + MAX_R * 0.707}
-					stroke="var(--border)"
-					stroke-width="0.75"
-					stroke-dasharray="2 3"
-				/>
-				<line
-					x1={CX - MAX_R * 0.707}
-					y1={CY + MAX_R * 0.707}
-					x2={CX + MAX_R * 0.707}
-					y2={CY - MAX_R * 0.707}
-					stroke="var(--border)"
-					stroke-width="0.75"
-					stroke-dasharray="2 3"
-				/>
+				<!-- Subtle 30° / 60° / 120° / 150° guides (aligns with 3-phase ±120° vectors) -->
+				{#each GUIDE_ANGLES_30 as deg (deg)}
+					{@const rad = (deg * Math.PI) / 180}
+					<line
+						x1={CX - MAX_R * Math.cos(rad)}
+						y1={CY + MAX_R * Math.sin(rad)}
+						x2={CX + MAX_R * Math.cos(rad)}
+						y2={CY - MAX_R * Math.sin(rad)}
+						stroke="var(--border)"
+						stroke-opacity="0.65"
+						stroke-width="0.65"
+						stroke-dasharray="2 4"
+					/>
+				{/each}
 
-				<!-- Primary 0° / 90° / 180° / -90° axes -->
+				<!-- Diagonal 45° / 135° guides -->
+				{#each GUIDE_ANGLES_45 as deg (deg)}
+					{@const rad = (deg * Math.PI) / 180}
+					<line
+						x1={CX - MAX_R * Math.cos(rad)}
+						y1={CY + MAX_R * Math.sin(rad)}
+						x2={CX + MAX_R * Math.cos(rad)}
+						y2={CY - MAX_R * Math.sin(rad)}
+						stroke="var(--border)"
+						stroke-width="0.75"
+						stroke-dasharray="2 3"
+					/>
+				{/each}
+
+				<!-- Primary 0° / 90° / 180° / 270° axes -->
 				<line
 					x1={CX - MAX_R - 10}
 					y1={CY}
@@ -506,12 +651,10 @@
 					<text x={CX + MAX_R + 14} y={CY + 3} text-anchor="start">0°</text>
 					<text x={CX} y={CY - MAX_R - 14} text-anchor="middle">90°</text>
 					<text x={CX - MAX_R - 14} y={CY + 3} text-anchor="end">180°</text>
-					<text x={CX} y={CY + MAX_R + 20} text-anchor="middle">-90°</text>
+					<text x={CX} y={CY + MAX_R + 20} text-anchor="middle">270°</text>
 				</g>
 
-				<!-- Label hit targets: drawn beneath every shaft group so shaft hit lines always win,
-				     and sized exactly like the placement boxes (which are kept 3px apart) so labels
-				     never steal each other's hover. Keyboard access is on the vector groups below. -->
+				<!-- Label hit targets beneath vector shafts -->
 				<g aria-hidden="true">
 					{#each phasorData.entries as entry (entry.key)}
 						{@const boxW = labelBoxWidth(entry.label)}
@@ -536,16 +679,17 @@
 				{#each phasorData.entries as entry (entry.key)}
 					{@const isHovered = hoveredKey === entry.key}
 					{@const isSelected = Boolean(entry.componentId && selectedComponentId === entry.componentId)}
-					{@const isDimmed = (hoveredKey !== null && !isHovered)}
+					{@const isDimmed = hoveredKey !== null && !isHovered}
 					{@const strokeColor = entry.category === 'voltage' ? 'var(--voltage)' : 'var(--current)'}
 					{@const markerUrl =
 						entry.category === 'voltage' ? `url(#${arrowVoltageId})` : `url(#${arrowCurrentId})`}
 
+					{@const labelParts = splitSubscriptLabel(entry.label)}
 					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 					<g
 						role={entry.componentId ? 'button' : undefined}
 						tabindex={entry.componentId ? 0 : undefined}
-						aria-label={`${entry.label}: ${entry.formattedPolar}`}
+						aria-label={`${labelParts.base}${labelParts.sub ?? ''}: ${entry.formattedPolar}`}
 						class={cn(
 							'transition-opacity duration-150',
 							entry.componentId && 'cursor-pointer',
@@ -565,7 +709,6 @@
 							}
 						}}
 					>
-						<!-- Invisible wide shaft hit target (label hit targets live in a layer below) -->
 						<line
 							x1={CX}
 							y1={CY}
@@ -589,13 +732,14 @@
 
 				<circle cx={CX} cy={CY} r="2.75" fill="var(--foreground)" />
 
-				<!-- Phasor vector labels rendered above all shafts with a background-matched halo -->
+				<!-- Collision-avoided vector labels -->
 				<g pointer-events="none">
 					{#each phasorData.entries as entry (entry.key)}
 						{@const isHovered = hoveredKey === entry.key}
 						{@const isSelected = Boolean(entry.componentId && selectedComponentId === entry.componentId)}
 						{@const isDimmed = hoveredKey !== null && !isHovered}
 						{@const strokeColor = entry.category === 'voltage' ? 'var(--voltage)' : 'var(--current)'}
+						{@const parts = splitSubscriptLabel(entry.label)}
 						<text
 							x={entry.labelX}
 							y={entry.labelY}
@@ -611,56 +755,89 @@
 							font-weight={isHovered || isSelected ? '700' : '600'}
 							class={cn('transition-opacity duration-150', isDimmed ? 'opacity-25' : 'opacity-100')}
 						>
-							{entry.label}
+							{parts.base}{#if parts.sub}<tspan dy="2.5" font-size="75%">{parts.sub}</tspan>{/if}
 						</text>
 					{/each}
 				</g>
 			</svg>
 		</div>
 
-		<!-- Compact interactive legend -->
+		<!-- Phasor Legend Table (Symbol | Magnitude | Angle ° | Rect a + jb) -->
 		<div class="flex flex-col">
 			{#if phasorData.entries.length === 0}
-				<p class="text-xs text-muted-foreground">
-					No non-zero phasors visible. Enable Voltages or Currents above.
+				<p class="rounded-[4px] border border-border bg-surface-rail/40 px-3 py-2.5 text-xs text-muted-foreground">
+					No non-zero phasors visible for the selected filter.
 				</p>
 			{:else}
-				<div class="max-h-[250px] divide-y divide-border overflow-y-auto border-y border-border">
-					{#each phasorData.entries as entry (entry.key)}
-						{@const isSelected = Boolean(entry.componentId && selectedComponentId === entry.componentId)}
-						{@const isHovered = hoveredKey === entry.key}
-						<button
-							type="button"
-							onmouseenter={() => (hoveredKey = entry.key)}
-							onmouseleave={() => (hoveredKey = null)}
-							onclick={() => {
-								if (entry.componentId) onSelectComponent?.(entry.componentId);
-							}}
-							class={cn(
-								'flex min-h-11 w-full cursor-pointer flex-wrap items-center justify-between gap-x-2 gap-y-0.5 px-2.5 py-2 text-left text-xs transition-colors duration-150 sm:min-h-0 sm:flex-nowrap sm:py-1.5',
-								'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-								isSelected || isHovered
-									? 'bg-primary/10'
-									: 'bg-transparent hover:bg-accent/40'
-							)}
-						>
-							<span class="flex shrink-0 items-center gap-2">
-								<span
+				<div class="max-h-[260px] overflow-x-auto overflow-y-auto rounded-[4px] border border-border">
+					<table class="w-full border-collapse text-left text-[11px]">
+						<thead class="sticky top-0 z-10 border-b border-border bg-surface-rail text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+							<tr>
+								<th class="py-1.5 pl-2.5 pr-1.5">Symbol</th>
+								<th class="px-1.5 py-1.5 text-right">Magnitude</th>
+								<th class="px-1.5 py-1.5 text-right">Angle</th>
+								<th class="py-1.5 pl-1.5 pr-2.5 text-right">Rect (a + jb)</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-border font-engineering">
+							{#each phasorData.entries as entry (entry.key)}
+								{@const isSelected = Boolean(entry.componentId && selectedComponentId === entry.componentId)}
+								{@const isHovered = hoveredKey === entry.key}
+								{@const parts = splitSubscriptLabel(entry.label)}
+								<tr
+									tabindex={entry.componentId ? 0 : undefined}
+									onmouseenter={() => (hoveredKey = entry.key)}
+									onmouseleave={() => (hoveredKey = null)}
+									onclick={() => {
+										if (entry.componentId) {
+											onSelectComponent?.(entry.componentId);
+										} else {
+											hoveredKey = hoveredKey === entry.key ? null : entry.key;
+										}
+									}}
+									onkeydown={(e) => {
+										if (entry.componentId && (e.key === 'Enter' || e.key === ' ')) {
+											e.preventDefault();
+											onSelectComponent?.(entry.componentId);
+										}
+									}}
 									class={cn(
-										'h-2 w-2 shrink-0 rounded-full',
-										entry.category === 'voltage' ? 'bg-voltage' : 'bg-branch-current'
+										'cursor-pointer transition-colors duration-150',
+										isSelected || isHovered
+											? 'bg-primary/10'
+											: 'bg-transparent hover:bg-accent/40'
 									)}
-									aria-hidden="true"
-								></span>
-								<span class="font-engineering whitespace-nowrap font-semibold text-foreground">
-									{entry.label}
-								</span>
-							</span>
-							<span class="font-engineering min-w-0 max-w-full break-words text-[11px] text-muted-foreground sm:truncate sm:whitespace-nowrap">
-								{entry.formatted}
-							</span>
-						</button>
-					{/each}
+								>
+									<td class="whitespace-nowrap py-2 pl-2.5 pr-1.5 lg:py-1.5">
+										<span class="inline-flex items-center gap-1.5">
+											<span
+												class={cn(
+													'h-2 w-2 shrink-0 rounded-full',
+													entry.category === 'voltage' ? 'bg-voltage' : 'bg-branch-current'
+												)}
+												aria-hidden="true"
+											></span>
+											<span class="font-semibold text-foreground">{parts.base}{#if parts.sub}<sub>{parts.sub}</sub>{/if}</span>
+										</span>
+									</td>
+									<td
+										class={cn(
+											'whitespace-nowrap px-1.5 py-2 text-right font-medium tabular-nums lg:py-1.5',
+											entry.category === 'voltage' ? 'text-voltage' : 'text-branch-current'
+										)}
+									>
+										{entry.magnitudeDisplay}
+									</td>
+									<td class="whitespace-nowrap px-1.5 py-2 text-right tabular-nums text-foreground lg:py-1.5">
+										{entry.angleDisplay}
+									</td>
+									<td class="whitespace-nowrap py-2 pl-1.5 pr-2.5 text-right tabular-nums text-muted-foreground lg:py-1.5">
+										{entry.rectDisplay}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 				</div>
 			{/if}
 		</div>

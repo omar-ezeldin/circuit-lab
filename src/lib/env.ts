@@ -26,6 +26,13 @@ export function resolveAcEnabled(_env: DeployEnv, rawOverride?: string): boolean
 	return true;
 }
 
+export function resolveMachinesEnabled(env: DeployEnv, rawOverride?: string): boolean {
+	const normalized = rawOverride?.trim().toLowerCase();
+	if (normalized === 'true') return true;
+	if (normalized === 'false') return false;
+	return env !== 'production';
+}
+
 export function getSettingsStorageKey(env: DeployEnv): string {
 	return env === 'staging' ? 'circuit-lab:settings:staging:v1' : 'circuit-lab:settings:v1';
 }
@@ -47,6 +54,11 @@ export const GA_MEASUREMENT_ID: string | undefined = resolveGaMeasurementId(
 export const AC_ENABLED: boolean = resolveAcEnabled(
 	DEPLOY_ENV,
 	import.meta.env.VITE_ENABLE_AC as string | undefined
+);
+
+export const MACHINES_ENABLED: boolean = resolveMachinesEnabled(
+	DEPLOY_ENV,
+	import.meta.env.VITE_ENABLE_MACHINES as string | undefined
 );
 
 export const DEPLOY_COMMIT_SHA: string | undefined =

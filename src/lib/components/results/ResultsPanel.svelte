@@ -3,12 +3,10 @@
 	import type {
 		CircuitDocument,
 		FullSolveResult,
-		MethodId,
 		ValidationDiagnostic
 	} from '$lib/engine/types';
 	import { cn } from '$lib/utils';
 	import FinalAnswersCard from './FinalAnswersCard.svelte';
-	import MethodStepsPanel from './MethodStepsPanel.svelte';
 	import PhasorDiagram from './PhasorDiagram.svelte';
 	import UnknownSolutionCard from './UnknownSolutionCard.svelte';
 
@@ -16,7 +14,6 @@
 		solution: FullSolveResult | null;
 		document: CircuitDocument;
 		selectedComponentId?: string | null;
-		activeMethod?: MethodId;
 		onSelectComponent?: (id: string) => void;
 		onSelectTheveninComponent?: (id: string) => void;
 		onApplyUnknownSolution?: (solutionIndex: number) => void;
@@ -27,7 +24,6 @@
 		solution,
 		document,
 		selectedComponentId = null,
-		activeMethod = $bindable<MethodId>('nodal'),
 		onSelectComponent,
 		onSelectTheveninComponent,
 		onApplyUnknownSolution,
@@ -56,11 +52,11 @@
 			<div class="text-sm font-semibold text-foreground">Ready to Solve</div>
 			<p class="max-w-sm text-xs leading-relaxed text-muted-foreground">
 				Build a circuit on the schematic canvas or load a preset to compute node voltages, branch
-				currents, power conservation, and 6-method KaTeX derivations.
+				currents, impedances, power balance, and AC phasors.
 			</p>
 		</div>
 	{:else}
-		<!-- 0. Unknown Parameter Solution (at very top when active) -->
+		<!-- 1. Unknown Parameter Solution (at very top when active) -->
 		{#if solution.unknownSolution}
 			<UnknownSolutionCard
 				unknownSolution={solution.unknownSolution}
@@ -70,7 +66,7 @@
 			/>
 		{/if}
 
-		<!-- Validation Diagnostics Banner -->
+		<!-- 2. Validation Diagnostics Banner -->
 		{#if errorDiags.length > 0 || warningDiags.length > 0 || infoDiags.length > 0}
 			<div class="flex flex-col divide-y divide-border" aria-label="Circuit Diagnostics">
 				{#if errorDiags.length > 0}
@@ -132,49 +128,54 @@
 		{/if}
 
 		{#if solution.mna.valid}
-			{#if !solution.mna.multiFrequencyHz}
-			<!-- 1. Direct Final Answers First -->
-			<FinalAnswersCard
-				{solution}
-				{document}
-				{selectedComponentId}
-				{onSelectComponent}
-				{onSelectTheveninComponent}
-			/>
+			{#if solution.mna.multiFrequencyHz}
+				<div class="bg-surface-rail/40 px-4 py-4 text-xs text-muted-foreground">
+					<div class="font-semibold text-foreground">Multi-Frequency AC Circuit</div>
+					<p class="mt-1 leading-relaxed">
+						Active sources operate at distinct frequencies ({solution.mna.multiFrequencyHz.join(' Hz, ')} Hz).
+						Set all sources to a common frequency to view steady-state phasor quantities and the polar phasor diagram.
+					</p>
+				</div>
+			{:else}
+				<!-- 3. Circuit Results Dashboard -->
+				<FinalAnswersCard
+					{solution}
+					{document}
+					{selectedComponentId}
+					{onSelectComponent}
+					{onSelectTheveninComponent}
+				/>
 
-			<!-- 2. Interactive AC Polar Phasor Diagram (Collapsible in AC Mode) -->
-			{#if solution.mna.mode === 'ac'}
-				<section class="bg-transparent">
-					<button
-						type="button"
-						aria-expanded={phasorExpanded}
-						onclick={() => (phasorExpanded = !phasorExpanded)}
-						class="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors duration-150 hover:bg-accent/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring lg:min-h-0"
-					>
-						<span>AC Polar Phasor Diagram</span>
-						<ChevronDown
-							class={cn(
-								'size-3.5 text-muted-foreground transition-transform duration-150',
-								phasorExpanded && 'rotate-180'
-							)}
-							aria-hidden="true"
-						/>
-					</button>
-					{#if phasorExpanded}
-						<div class="px-4 pb-4">
-							<PhasorDiagram
-								{solution}
-								{selectedComponentId}
-								{onSelectComponent}
+				<!-- 4. Interactive AC Polar Phasor Diagram (Expanded by default, collapsible) -->
+				{#if solution.mna.mode === 'ac'}
+					<section class="bg-transparent" aria-label="AC Polar Phasor Diagram">
+						<button
+							type="button"
+							aria-expanded={phasorExpanded}
+							onclick={() => (phasorExpanded = !phasorExpanded)}
+							class="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors duration-150 hover:bg-accent/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring lg:min-h-0"
+						>
+							<span>AC Polar Phasor Diagram</span>
+							<ChevronDown
+								class={cn(
+									'size-3.5 text-muted-foreground transition-transform duration-150',
+									phasorExpanded && 'rotate-180'
+								)}
+								aria-hidden="true"
 							/>
-						</div>
-					{/if}
-				</section>
+						</button>
+						{#if phasorExpanded}
+							<div class="px-4 pb-4">
+								<PhasorDiagram
+									{solution}
+									{selectedComponentId}
+									{onSelectComponent}
+								/>
+							</div>
+						{/if}
+					</section>
+				{/if}
 			{/if}
-			{/if}
-
-			<!-- 3. Step-by-Step Review Below (Superposition is the valid method for mixed frequencies) -->
-			<MethodStepsPanel {solution} bind:activeMethod />
 		{/if}
 	{/if}
 </div>

@@ -17,6 +17,7 @@ import {
 } from './math-helpers';
 import type {
 	MachineAnswerItem,
+	MachinePhasor,
 	MachineSolveResult,
 	MachineStep,
 	TransformerEfficiencyInput,
@@ -82,14 +83,29 @@ export function solveTransformerEmfAndCoreLoss(
 		});
 
 		answers.push(
-			makeAnswer('turnsRatio', 'Turns Ratio', a, '', { symbolLatex: 'a = N_1/N_2', decimals: 4 }),
+			makeAnswer('e1V', 'Primary Induced EMF', e1, 'V', {
+				symbolLatex: 'E_1',
+				decimals: 2,
+				highlight: true,
+				group: 'voltages'
+			}),
+			makeAnswer('e2V', 'Secondary Induced EMF', e2, 'V', {
+				symbolLatex: 'E_2',
+				decimals: 2,
+				highlight: true,
+				group: 'voltages'
+			}),
 			makeAnswer('maxFluxWb', 'Maximum Core Flux', phiM, 'Wb', {
 				symbolLatex: '\\Phi_m',
 				decimals: 4,
+				group: 'magnetic',
 				formatted: `${fmt(phiM * 1000, 4)} mWb`
 			}),
-			makeAnswer('e1V', 'Primary Induced EMF', e1, 'V', { symbolLatex: 'E_1', decimals: 2, highlight: true }),
-			makeAnswer('e2V', 'Secondary Induced EMF', e2, 'V', { symbolLatex: 'E_2', decimals: 2, highlight: true })
+			makeAnswer('turnsRatio', 'Turns Ratio', a, '', {
+				symbolLatex: 'a = N_1/N_2',
+				decimals: 4,
+				group: 'general'
+			})
 		);
 
 		const values: Record<string, number> = {
@@ -101,7 +117,11 @@ export function solveTransformerEmfAndCoreLoss(
 		if (bM !== undefined) {
 			values.maxFluxDensityT = bM;
 			answers.push(
-				makeAnswer('maxFluxDensityT', 'Peak Flux Density', bM, 'T', { symbolLatex: 'B_m', decimals: 4 })
+				makeAnswer('maxFluxDensityT', 'Peak Flux Density', bM, 'T', {
+					symbolLatex: 'B_m',
+					decimals: 4,
+					group: 'magnetic'
+				})
 			);
 		}
 
@@ -154,22 +174,33 @@ export function solveTransformerEmfAndCoreLoss(
 		});
 
 		answers.push(
-			makeAnswer('coeffA', 'Hysteresis Coefficient A', coeffA, 'W/Hz', { symbolLatex: 'A', decimals: 4 }),
-			makeAnswer('coeffB', 'Eddy-Current Coefficient B', coeffB, 'W/Hz²', { symbolLatex: 'B', decimals: 5 }),
 			makeAnswer('phTargetW', 'Hysteresis Loss', phTarget, 'W', {
 				symbolLatex: 'P_h',
 				decimals: 2,
-				highlight: true
+				highlight: true,
+				group: 'power'
 			}),
 			makeAnswer('peTargetW', 'Eddy-Current Loss', peTarget, 'W', {
 				symbolLatex: 'P_e',
 				decimals: 2,
-				highlight: true
+				highlight: true,
+				group: 'power'
 			}),
 			makeAnswer('pcTargetW', 'Total Core Loss', pcTarget, 'W', {
 				symbolLatex: 'P_c',
 				decimals: 2,
-				highlight: true
+				highlight: true,
+				group: 'power'
+			}),
+			makeAnswer('coeffA', 'Hysteresis Coefficient A', coeffA, 'W/Hz', {
+				symbolLatex: 'A',
+				decimals: 4,
+				group: 'general'
+			}),
+			makeAnswer('coeffB', 'Eddy-Current Coefficient B', coeffB, 'W/Hz²', {
+				symbolLatex: 'B',
+				decimals: 5,
+				group: 'general'
 			})
 		);
 
@@ -228,9 +259,24 @@ export function solveTransformerEmfAndCoreLoss(
 	});
 
 	answers.push(
-		makeAnswer('ph2W', 'New Hysteresis Loss', ph2, 'W', { symbolLatex: 'P_{h2}', decimals: 2, highlight: true }),
-		makeAnswer('pe2W', 'New Eddy-Current Loss', pe2, 'W', { symbolLatex: 'P_{e2}', decimals: 2, highlight: true }),
-		makeAnswer('pc2W', 'New Total Core Loss', pc2, 'W', { symbolLatex: 'P_{c2}', decimals: 2, highlight: true })
+		makeAnswer('ph2W', 'New Hysteresis Loss', ph2, 'W', {
+			symbolLatex: 'P_{h2}',
+			decimals: 2,
+			highlight: true,
+			group: 'power'
+		}),
+		makeAnswer('pe2W', 'New Eddy-Current Loss', pe2, 'W', {
+			symbolLatex: 'P_{e2}',
+			decimals: 2,
+			highlight: true,
+			group: 'power'
+		}),
+		makeAnswer('pc2W', 'New Total Core Loss', pc2, 'W', {
+			symbolLatex: 'P_{c2}',
+			decimals: 2,
+			highlight: true,
+			group: 'power'
+		})
 	);
 
 	return {
@@ -306,13 +352,19 @@ export function solveTransformerOcScTests(input: TransformerOcScInput): MachineS
 	const xeRef = xScSide * scScale;
 	const zeRef = Math.hypot(reRef, xeRef);
 
-	// Also compute primary-referred values explicitly for on-load performance
+	// Compute BOTH primary-referred and secondary-referred parameters explicitly
 	const ocToPrim = Math.pow(input.v1Rated / ocVoltage, 2);
 	const scToPrim = Math.pow(input.v1Rated / scVoltage, 2);
 	const rc1 = rcOcSide * ocToPrim;
 	const xm1 = xmOcSide * ocToPrim;
 	const re1 = rScSide * scToPrim;
 	const xe1 = xScSide * scToPrim;
+
+	const aSq = a * a;
+	const rc2 = rc1 / aSq;
+	const xm2 = xm1 / aSq;
+	const re2 = re1 / aSq;
+	const xe2 = xe1 / aSq;
 
 	const steps: MachineStep[] = [
 		{
@@ -338,32 +390,90 @@ export function solveTransformerOcScTests(input: TransformerOcScInput): MachineS
 		}
 	];
 
+	const isPrim = input.referTo === 'primary';
 	const answers: MachineAnswerItem[] = [
-		makeAnswer('rcRef', `Core-Loss Resistance (ref. ${input.referTo})`, rcRef, 'Ω', {
-			symbolLatex: input.referTo === 'primary' ? 'R_{c1}' : 'R_{c2}',
+		// Primary-referred equivalent circuit parameters
+		makeAnswer('rc1', 'Core-Loss Resistance (Primary)', rc1, 'Ω', {
+			symbolLatex: 'R_{c1}',
 			decimals: 2,
-			highlight: true
+			highlight: isPrim,
+			group: 'impedance'
 		}),
-		makeAnswer('xmRef', `Magnetizing Reactance (ref. ${input.referTo})`, xmRef, 'Ω', {
-			symbolLatex: input.referTo === 'primary' ? 'X_{m1}' : 'X_{m2}',
+		makeAnswer('xm1', 'Magnetizing Reactance (Primary)', xm1, 'Ω', {
+			symbolLatex: 'X_{m1}',
 			decimals: 2,
-			highlight: true
+			highlight: isPrim,
+			group: 'impedance'
 		}),
-		makeAnswer('reRef', `Equivalent Resistance (ref. ${input.referTo})`, reRef, 'Ω', {
-			symbolLatex: input.referTo === 'primary' ? 'R_{e1}' : 'R_{e2}',
+		makeAnswer('re1', 'Equivalent Resistance (Primary)', re1, 'Ω', {
+			symbolLatex: 'R_{eq1}',
 			decimals: 4,
-			highlight: true
+			highlight: isPrim,
+			group: 'impedance'
 		}),
-		makeAnswer('xeRef', `Equivalent Reactance (ref. ${input.referTo})`, xeRef, 'Ω', {
-			symbolLatex: input.referTo === 'primary' ? 'X_{e1}' : 'X_{e2}',
+		makeAnswer('xe1', 'Equivalent Reactance (Primary)', xe1, 'Ω', {
+			symbolLatex: 'X_{eq1}',
 			decimals: 4,
-			highlight: true
+			highlight: isPrim,
+			group: 'impedance'
+		}),
+		// Secondary-referred equivalent circuit parameters
+		makeAnswer('rc2', 'Core-Loss Resistance (Secondary)', rc2, 'Ω', {
+			symbolLatex: 'R_{c2}',
+			decimals: 2,
+			highlight: !isPrim,
+			group: 'impedance'
+		}),
+		makeAnswer('xm2', 'Magnetizing Reactance (Secondary)', xm2, 'Ω', {
+			symbolLatex: 'X_{m2}',
+			decimals: 2,
+			highlight: !isPrim,
+			group: 'impedance'
+		}),
+		makeAnswer('re2', 'Equivalent Resistance (Secondary)', re2, 'Ω', {
+			symbolLatex: 'R_{eq2}',
+			decimals: 4,
+			highlight: !isPrim,
+			group: 'impedance'
+		}),
+		makeAnswer('xe2', 'Equivalent Reactance (Secondary)', xe2, 'Ω', {
+			symbolLatex: 'X_{eq2}',
+			decimals: 4,
+			highlight: !isPrim,
+			group: 'impedance'
+		}),
+		// No-load excitation currents & PF
+		makeAnswer('iOc', `No-Load Current (${input.ocSide})`, input.iOc, 'A', {
+			symbolLatex: 'I_0',
+			decimals: 4,
+			group: 'currents'
+		}),
+		makeAnswer('iwOc', `Core-Loss Current (${input.ocSide})`, iwOc, 'A', {
+			symbolLatex: 'I_c',
+			decimals: 4,
+			group: 'currents'
+		}),
+		makeAnswer('imOc', `Magnetizing Current (${input.ocSide})`, imOc, 'A', {
+			symbolLatex: 'I_m',
+			decimals: 4,
+			group: 'currents'
+		}),
+		makeAnswer('cosPhi0', 'No-Load Power Factor', cosPhi0Clamped, 'lag', {
+			symbolLatex: '\\cos\\phi_0',
+			decimals: 4,
+			group: 'power'
+		}),
+		makeAnswer('turnsRatio', 'Turns Ratio', a, '', {
+			symbolLatex: 'a = V_1/V_2',
+			decimals: 4,
+			group: 'general'
 		})
 	];
 
 	const values: Record<string, number> = {
 		turnsRatio: a,
 		cosPhi0: cosPhi0Clamped,
+		iOc: input.iOc,
 		iwOc,
 		imOc,
 		rcOcSide,
@@ -379,8 +489,14 @@ export function solveTransformerOcScTests(input: TransformerOcScInput): MachineS
 		rc1,
 		xm1,
 		re1,
-		xe1
+		xe1,
+		rc2,
+		xm2,
+		re2,
+		xe2
 	};
+
+	let phasors: MachinePhasor[] | undefined;
 
 	// Optional on-load evaluation
 	if (isFinitePos(input.evalLoadFraction) && isFinitePos(input.evalPf)) {
@@ -400,25 +516,36 @@ export function solveTransformerOcScTests(input: TransformerOcScInput): MachineS
 		});
 		if (onLoad.valid) {
 			steps.push(...onLoad.steps);
+			phasors = onLoad.phasors;
 			answers.push(
 				makeAnswer('vrExactPercent', 'Voltage Regulation (Exact)', onLoad.values.vrExactPercent, '%', {
 					symbolLatex: '\\%VR',
 					decimals: 3,
-					highlight: true
+					highlight: true,
+					group: 'voltages'
+				}),
+				makeAnswer('v1Mag', 'Primary Voltage at Load', onLoad.values.v1Mag, 'V', {
+					symbolLatex: '\\bar{V}_1',
+					decimals: 2,
+					group: 'voltages',
+					formatted: fmtPolar(onLoad.values.v1Mag, onLoad.values.v1Deg, 'V', 2)
 				}),
 				makeAnswer('efficiencyPercent', 'Efficiency at Load', onLoad.values.efficiencyPercent, '%', {
 					symbolLatex: '\\eta',
 					decimals: 2,
-					highlight: true
+					highlight: true,
+					group: 'power'
 				}),
-				makeAnswer('i1Mag', 'Primary Current', onLoad.values.i1Mag, 'A', {
+				makeAnswer('i1Mag', 'Primary Current at Load', onLoad.values.i1Mag, 'A', {
 					symbolLatex: '\\bar{I}_1',
 					decimals: 3,
+					group: 'currents',
 					formatted: fmtPolar(onLoad.values.i1Mag, onLoad.values.i1Deg, 'A', 3)
 				}),
 				makeAnswer('sMaxEffKVA', 'Load for Max Efficiency', onLoad.values.sMaxEffKVA, 'kVA', {
 					symbolLatex: 'S_{\\max\\eta}',
-					decimals: 3
+					decimals: 3,
+					group: 'power'
 				})
 			);
 			Object.assign(values, {
@@ -442,6 +569,7 @@ export function solveTransformerOcScTests(input: TransformerOcScInput): MachineS
 		questionType: 'QT-XFMR-2',
 		title: TITLE_XFMR2,
 		answers,
+		phasors,
 		values,
 		steps
 	};
@@ -587,41 +715,128 @@ export function solveTransformerOnLoad(input: TransformerOnLoadInput): MachineSo
 	];
 
 	const answers: MachineAnswerItem[] = [
+		// Voltages
+		makeAnswer('v2PrimeMag', 'Referred Secondary Voltage', input.v1Rated, 'V', {
+			symbolLatex: "\\bar{V}_2'",
+			decimals: 2,
+			group: 'voltages',
+			formatted: fmtPolar(input.v1Rated, 0, 'V', 2)
+		}),
+		makeAnswer('v1Mag', 'Primary Supply Voltage', v1Mag, 'V', {
+			symbolLatex: '\\bar{V}_1',
+			decimals: 2,
+			group: 'voltages',
+			formatted: fmtPolar(v1Mag, v1Deg, 'V', 2)
+		}),
 		makeAnswer('vrExactPercent', 'Voltage Regulation (Exact)', vrExactPercent, '%', {
 			symbolLatex: '\\%VR',
 			decimals: 3,
-			highlight: true
+			highlight: true,
+			group: 'voltages'
 		}),
 		makeAnswer('vrApproxPercent', 'Voltage Regulation (Approx)', vrApproxPercent, '%', {
 			symbolLatex: '\\%VR_{\\text{approx}}',
-			decimals: 3
+			decimals: 3,
+			group: 'voltages'
 		}),
-		makeAnswer('v1Mag', 'Primary Voltage Magnitude', v1Mag, 'V', {
-			symbolLatex: '|\\bar{V}_1|',
-			decimals: 2,
-			formatted: fmtPolar(v1Mag, v1Deg, 'V', 2)
+		// Currents
+		makeAnswer('i2PrimeMag', 'Referred Load Current', i2PrimeMag, 'A', {
+			symbolLatex: "\\bar{I}_2'",
+			decimals: 3,
+			group: 'currents',
+			formatted: fmtPolar(i2PrimeMag, i2PrimeDeg, 'A', 3)
 		}),
 		makeAnswer('i1Mag', 'Primary Input Current', i1Mag, 'A', {
 			symbolLatex: '\\bar{I}_1',
 			decimals: 3,
+			highlight: true,
+			group: 'currents',
 			formatted: fmtPolar(i1Mag, i1Deg, 'A', 3)
 		}),
-		makeAnswer('pCoreW', 'Core (Iron) Loss', pCoreW, 'W', { symbolLatex: 'P_i', decimals: 2 }),
-		makeAnswer('pCuW', 'Copper Loss at Load', pCuW, 'W', { symbolLatex: 'P_{cu}', decimals: 2 }),
+		// Power & Efficiency
+		makeAnswer('pOutW', 'Output Active Power', pOutW, 'W', {
+			symbolLatex: 'P_{\\text{out}}',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(pOutW / 1000, 3)} kW`
+		}),
+		makeAnswer('pInW', 'Input Active Power', pInW, 'W', {
+			symbolLatex: 'P_{\\text{in}}',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(pInW / 1000, 3)} kW`
+		}),
+		makeAnswer('pCoreW', 'Core (Iron) Loss', pCoreW, 'W', {
+			symbolLatex: 'P_i',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('pCuW', 'Copper Loss at Load', pCuW, 'W', {
+			symbolLatex: 'P_{cu}',
+			decimals: 2,
+			group: 'power'
+		}),
 		makeAnswer('efficiencyPercent', 'Efficiency', efficiencyPercent, '%', {
 			symbolLatex: '\\eta',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'power'
 		}),
 		makeAnswer('sMaxEffKVA', 'Load for Max Efficiency', sMaxEffVA / 1000, 'kVA', {
 			symbolLatex: 'S_{\\max\\eta}',
 			decimals: 3,
-			highlight: true
+			highlight: true,
+			group: 'power'
 		}),
-		makeAnswer('etaMaxAtUpf', 'Max Efficiency (UPF)', etaMaxAtUpf, '%', {
+		makeAnswer('etaMaxAtPf', 'Max Efficiency (at Load PF)', etaMaxAtPf, '%', {
+			symbolLatex: '\\eta_{\\max}',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('etaMaxAtUpf', 'Max Efficiency (Unity PF)', etaMaxAtUpf, '%', {
 			symbolLatex: '\\eta_{\\max,\\text{UPF}}',
-			decimals: 2
+			decimals: 2,
+			group: 'power'
 		})
+	];
+
+	const phasors: MachinePhasor[] = [
+		{
+			id: 'v2p',
+			label: "V2'",
+			kind: 'voltage',
+			magnitude: input.v1Rated,
+			angleDeg: 0,
+			unit: 'V',
+			formatted: fmtPolar(input.v1Rated, 0, 'V', 2)
+		},
+		{
+			id: 'v1',
+			label: 'V1',
+			kind: 'voltage',
+			magnitude: v1Mag,
+			angleDeg: v1Deg,
+			unit: 'V',
+			formatted: fmtPolar(v1Mag, v1Deg, 'V', 2)
+		},
+		{
+			id: 'i2p',
+			label: "I2'",
+			kind: 'current',
+			magnitude: i2PrimeMag,
+			angleDeg: i2PrimeDeg,
+			unit: 'A',
+			formatted: fmtPolar(i2PrimeMag, i2PrimeDeg, 'A', 3)
+		},
+		{
+			id: 'i1',
+			label: 'I1',
+			kind: 'current',
+			magnitude: i1Mag,
+			angleDeg: i1Deg,
+			unit: 'A',
+			formatted: fmtPolar(i1Mag, i1Deg, 'A', 3)
+		}
 	];
 
 	return {
@@ -629,6 +844,7 @@ export function solveTransformerOnLoad(input: TransformerOnLoadInput): MachineSo
 		questionType: 'QT-XFMR-3',
 		title: TITLE_XFMR3,
 		answers,
+		phasors,
 		values: {
 			turnsRatio: a,
 			re1,
@@ -769,26 +985,38 @@ export function solveTransformerEfficiencyLoad(
 	});
 
 	answers.push(
-		makeAnswer('pCoreW', 'Core (Iron) Loss', pCoreW, 'W', { symbolLatex: 'P_i', decimals: 2 }),
-		makeAnswer('pCuFlW', 'Full-Load Copper Loss', pCuFlW, 'W', { symbolLatex: 'P_{cu,\\text{FL}}', decimals: 2 }),
+		makeAnswer('pCoreW', 'Core (Iron) Loss', pCoreW, 'W', {
+			symbolLatex: 'P_i',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('pCuFlW', 'Full-Load Copper Loss', pCuFlW, 'W', {
+			symbolLatex: 'P_{cu,\\text{FL}}',
+			decimals: 2,
+			group: 'power'
+		}),
 		makeAnswer('efficiencyPercent', 'Efficiency at Target Load', efficiencyPercent, '%', {
 			symbolLatex: '\\eta',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'power'
 		}),
 		makeAnswer('xMaxEff', 'Load Fraction for Max Efficiency', xMaxEff, '', {
 			symbolLatex: 'x_{\\max\\eta}',
-			decimals: 4
+			decimals: 4,
+			group: 'general'
 		}),
 		makeAnswer('sMaxEffKVA', 'kVA for Max Efficiency', sMaxEffVA / 1000, 'kVA', {
 			symbolLatex: 'S_{\\max\\eta}',
 			decimals: 3,
-			highlight: true
+			highlight: true,
+			group: 'power'
 		}),
 		makeAnswer('etaMaxPercent', 'Maximum Efficiency', etaMaxPercent, '%', {
 			symbolLatex: '\\eta_{\\max}',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'power'
 		})
 	);
 

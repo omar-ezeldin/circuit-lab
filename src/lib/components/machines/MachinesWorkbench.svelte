@@ -142,6 +142,11 @@
 				<span class="truncate text-xs font-semibold text-foreground">
 					{activeMeta.shortLabel}
 				</span>
+				<span
+					class="shrink-0 rounded-[3px] border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+				>
+					Beta
+				</span>
 			</div>
 			<span class="inline-flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
 				<ListFilter class="size-3.5" aria-hidden="true" />
@@ -216,12 +221,19 @@
 									<span class="truncate text-xs font-semibold leading-tight">
 										{qt.shortLabel}
 									</span>
-									{#if active}
+									<span class="flex shrink-0 items-center gap-1.5">
 										<span
-											class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-											aria-hidden="true"
-										></span>
-									{/if}
+											class="rounded-[3px] border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-warning"
+										>
+											Beta
+										</span>
+										{#if active}
+											<span
+												class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+												aria-hidden="true"
+											></span>
+										{/if}
+									</span>
 								</button>
 							{/each}
 						</div>
@@ -248,6 +260,11 @@
 					<Badge variant="secondary" class="text-[10px]">
 						{activeCategoryMeta.shortTitle}
 					</Badge>
+					<span
+						class="rounded-[3px] border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+					>
+						Beta
+					</span>
 				</div>
 				<h1 class="text-base font-semibold tracking-tight text-foreground sm:text-lg">
 					{activeMeta.title}
@@ -408,12 +425,19 @@
 											: 'border-border/70 bg-card text-foreground/85 hover:bg-accent/70 hover:text-foreground'
 									)}
 								>
-									<span class="text-sm font-medium leading-tight">
+									<span class="truncate text-sm font-medium leading-tight">
 										{qt.shortLabel}
 									</span>
-									{#if active}
-										<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
-									{/if}
+									<span class="flex shrink-0 items-center gap-2">
+										<span
+											class="rounded-[3px] border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+										>
+											Beta
+										</span>
+										{#if active}
+											<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
+										{/if}
+									</span>
 								</button>
 							{/each}
 						</div>

@@ -766,4 +766,104 @@ describe('Catalog Presets, Dispatcher & Invalid-Input Handling', () => {
 		expect(badMag.valid).toBe(false);
 		expect(badMag.error).toBeTruthy();
 	});
+
+	it('QT-3PH-1 returns exhaustive positive-sequence voltages, currents, power, and phasors for Y and Delta loads', () => {
+		const yRes = solveThreePhase({
+			loadConnection: 'Y',
+			voltageType: 'line',
+			voltageV: 400,
+			loadMode: 'impedance',
+			loadR: 8,
+			loadX: 6,
+			lineR: 0.5,
+			lineX: 1
+		});
+		assertValidResult(yRes, 'QT-3PH-1');
+		const yKeys = new Set(yRes.answers.map((a) => a.key));
+		for (const k of [
+			'vAn',
+			'vBn',
+			'vCn',
+			'vAb',
+			'vBc',
+			'vCa',
+			'vSourcePhaseMag',
+			'vBnSrc',
+			'vCnSrc',
+			'vSourceLineMag',
+			'vBcSrc',
+			'vCaSrc',
+			'iLineMag',
+			'iB',
+			'iC',
+			'pTotalW',
+			'qTotalVar',
+			'sTotalVA',
+			'pfLoad',
+			'pPhaseW',
+			'pLineTotalW',
+			'pSourceTotalW',
+			'efficiencyPercent'
+		]) {
+			expect(yKeys.has(k), `Y-load answers should contain ${k}`).toBe(true);
+		}
+		expect(yRes.phasors?.length ?? 0).toBeGreaterThanOrEqual(9);
+		expect(yRes.answers.every((a) => Boolean(a.group))).toBe(true);
+
+		const dRes = solveThreePhase({
+			loadConnection: 'D',
+			voltageType: 'line',
+			voltageV: 400,
+			loadMode: 'impedance',
+			loadR: 12,
+			loadX: 9
+		});
+		assertValidResult(dRes, 'QT-3PH-1');
+		const dKeys = new Set(dRes.answers.map((a) => a.key));
+		for (const k of ['iLineMag', 'iB', 'iC', 'iPhaseMag', 'iBc', 'iCa']) {
+			expect(dKeys.has(k), `Delta-load answers should contain ${k}`).toBe(true);
+		}
+		expect(dRes.phasors?.length ?? 0).toBe(12);
+	});
+
+	it('QT-XFMR-2 returns both primary and secondary referred parameters, and QT-XFMR-3 includes phasors', () => {
+		const ocSc = solveTransformerOcScTests({
+			ratedVA: 20_000,
+			v1Rated: 2000,
+			v2Rated: 200,
+			frequencyHz: 50,
+			ocSide: 'LV',
+			vOc: 200,
+			iOc: 4,
+			pOc: 120,
+			scSide: 'HV',
+			vSc: 60,
+			iSc: 10,
+			pSc: 300,
+			referTo: 'primary'
+		});
+		assertValidResult(ocSc, 'QT-XFMR-2');
+		const keys = new Set(ocSc.answers.map((a) => a.key));
+		for (const k of ['rc1', 'xm1', 're1', 'xe1', 'rc2', 'xm2', 're2', 'xe2', 'iOc', 'iwOc', 'imOc', 'cosPhi0', 'turnsRatio']) {
+			expect(keys.has(k), `QT-XFMR-2 answers should contain ${k}`).toBe(true);
+		}
+		assertRelClose(ocSc.values.rc2, ocSc.values.rc1 / 100, 1e-6);
+		assertRelClose(ocSc.values.re2, ocSc.values.re1 / 100, 1e-6);
+
+		const onLoad = solveTransformerOnLoad({
+			ratedVA: 20_000,
+			v1Rated: 2000,
+			v2Rated: 200,
+			paramRef: 'primary',
+			re: 3,
+			xe: 5.196,
+			rc: 33333,
+			xm: 5058,
+			loadFraction: 1,
+			pf: 0.8,
+			pfType: 'lag'
+		});
+		assertValidResult(onLoad, 'QT-XFMR-3');
+		expect(onLoad.phasors?.length).toBe(4);
+	});
 });

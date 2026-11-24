@@ -84,18 +84,35 @@ export function solveInductionMotorBasic(input: InductionMotorBasicInput): Machi
 		makeAnswer('nsRpm', 'Synchronous Speed', nsRpm, 'rpm', {
 			symbolLatex: 'N_s',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'mechanical'
 		}),
-		makeAnswer('slipPercent', 'Slip', slip * 100, '%', { symbolLatex: 's', decimals: 3 }),
 		makeAnswer('nrRpm', 'Rotor Speed', nrRpm, 'rpm', {
 			symbolLatex: 'N_r',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'mechanical'
+		}),
+		makeAnswer('omegaS', 'Synchronous Angular Speed', omegaS, 'rad/s', {
+			symbolLatex: '\\omega_s',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('omegaR', 'Rotor Angular Speed', omegaR, 'rad/s', {
+			symbolLatex: '\\omega_r',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('slipPercent', 'Slip', slip * 100, '%', {
+			symbolLatex: 's',
+			decimals: 3,
+			group: 'general'
 		}),
 		makeAnswer('rotorFreqHz', 'Rotor Current Frequency', rotorFreqHz, 'Hz', {
 			symbolLatex: 'f_r',
 			decimals: 3,
-			highlight: true
+			highlight: true,
+			group: 'general'
 		})
 	];
 
@@ -116,7 +133,8 @@ export function solveInductionMotorBasic(input: InductionMotorBasicInput): Machi
 		answers.push(
 			makeAnswer('nNoLoadRpm', 'No-Load Rotor Speed', nNoLoadRpm, 'rpm', {
 				symbolLatex: 'N_{nl}',
-				decimals: 2
+				decimals: 2,
+				group: 'mechanical'
 			})
 		);
 	}
@@ -141,7 +159,14 @@ export function solveInductionMotorBasic(input: InductionMotorBasicInput): Machi
 			makeAnswer('tShaftNm', 'Shaft Torque', tShaftNm, 'N·m', {
 				symbolLatex: 'T_{\\text{sh}}',
 				decimals: 2,
-				highlight: true
+				highlight: true,
+				group: 'mechanical'
+			}),
+			makeAnswer('pOutW', 'Shaft Output Power', pOutW, 'W', {
+				symbolLatex: 'P_{\\text{out}}',
+				decimals: 1,
+				group: 'power',
+				formatted: `${fmt(pOutW / 1000, 3)} kW`
 			})
 		);
 	}
@@ -280,26 +305,76 @@ export function solveInductionMotorPowerFlow(
 	});
 
 	const answers: MachineAnswerItem[] = [
-		makeAnswer('pInKW', 'Stator Input Power', pInW / 1000, 'kW', { symbolLatex: 'P_{i/p}', decimals: 3 }),
-		makeAnswer('pAirGapKW', 'Air-Gap Power', pAirGapW / 1000, 'kW', { symbolLatex: 'P_g', decimals: 3 }),
-		makeAnswer('slipPercent', 'Slip', slip * 100, '%', { symbolLatex: 's', decimals: 3 }),
-		makeAnswer('pRotorCuW', 'Rotor Copper Loss', pRotorCuW, 'W', { symbolLatex: 'P_{cu,r}', decimals: 1 }),
-		makeAnswer('pDevKW', 'Developed Mechanical Power', pDevW / 1000, 'kW', { symbolLatex: 'P_d', decimals: 3 }),
+		// Power & Efficiency
+		makeAnswer('pInKW', 'Stator Input Power', pInW / 1000, 'kW', {
+			symbolLatex: 'P_{i/p}',
+			decimals: 3,
+			group: 'power'
+		}),
+		makeAnswer('pAirGapKW', 'Air-Gap Power', pAirGapW / 1000, 'kW', {
+			symbolLatex: 'P_g',
+			decimals: 3,
+			group: 'power'
+		}),
+		makeAnswer('pRotorCuW', 'Rotor Copper Loss', pRotorCuW, 'W', {
+			symbolLatex: 'P_{cu,r}',
+			decimals: 1,
+			group: 'power'
+		}),
+		makeAnswer('pDevKW', 'Developed Mechanical Power', pDevW / 1000, 'kW', {
+			symbolLatex: 'P_d',
+			decimals: 3,
+			group: 'power'
+		}),
 		makeAnswer('pOutKW', 'Shaft Output Power', pOutW / 1000, 'kW', {
 			symbolLatex: 'P_{o/p}',
 			decimals: 3,
-			highlight: true
-		}),
-		makeAnswer('nrRpm', 'Rotor Speed', nrRpm, 'rpm', { symbolLatex: 'N_r', decimals: 2 }),
-		makeAnswer('tShaftNm', 'Shaft Torque', tShaftNm, 'N·m', {
-			symbolLatex: 'T_{\\text{sh}}',
-			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'power'
 		}),
 		makeAnswer('efficiencyPercent', 'Efficiency', efficiencyPercent, '%', {
 			symbolLatex: '\\eta',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'power'
+		}),
+		// Mechanical & Torque
+		makeAnswer('nsRpm', 'Synchronous Speed', nsRpm, 'rpm', {
+			symbolLatex: 'N_s',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('nrRpm', 'Rotor Speed', nrRpm, 'rpm', {
+			symbolLatex: 'N_r',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('omegaS', 'Synchronous Angular Speed', omegaS, 'rad/s', {
+			symbolLatex: '\\omega_s',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('omegaR', 'Rotor Angular Speed', omegaR, 'rad/s', {
+			symbolLatex: '\\omega_r',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('tdNm', 'Developed Torque', tdNm, 'N·m', {
+			symbolLatex: 'T_d',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('tShaftNm', 'Shaft Torque', tShaftNm, 'N·m', {
+			symbolLatex: 'T_{\\text{sh}}',
+			decimals: 2,
+			highlight: true,
+			group: 'mechanical'
+		}),
+		// General
+		makeAnswer('slipPercent', 'Slip', slip * 100, '%', {
+			symbolLatex: 's',
+			decimals: 3,
+			group: 'general'
 		})
 	];
 
@@ -482,43 +557,112 @@ export function solveInductionMotorEquivCircuit(
 	});
 
 	const answers: MachineAnswerItem[] = [
+		// Voltages
+		makeAnswer('vPh', 'Stator Phase Voltage', vPh, 'V', {
+			symbolLatex: 'V_{1,\\text{ph}}',
+			decimals: 2,
+			group: 'voltages'
+		}),
+		// Currents
 		makeAnswer('i1Mag', 'Stator Phase Current', i1Mag, 'A', {
 			symbolLatex: '\\bar{I}_1',
 			decimals: 2,
 			highlight: true,
+			group: 'currents',
 			formatted: fmtPolar(i1Mag, i1Deg, 'A', 2)
 		}),
 		makeAnswer('i2PrimeMag', 'Referred Rotor Current', i2Mag, 'A', {
-			symbolLatex: '|\\bar{I}_2\'|',
+			symbolLatex: "|\\bar{I}_2'|",
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'currents'
 		}),
-		makeAnswer('pf', 'Input Power Factor', pf, 'lag', { symbolLatex: '\\cos\\phi_1', decimals: 4 }),
-		makeAnswer('pAirGapW', 'Air-Gap Power', pAirGapW, 'W', { symbolLatex: 'P_g', decimals: 1 }),
-		makeAnswer('pDevW', 'Developed Power', pDevW, 'W', { symbolLatex: 'P_d', decimals: 1 }),
-		makeAnswer('pOutW', 'Shaft Output Power', pOutW, 'W', { symbolLatex: 'P_{o/p}', decimals: 1 }),
-		makeAnswer('tdNm', 'Developed Torque', tdNm, 'N·m', {
-			symbolLatex: 'T_d',
-			decimals: 2,
-			highlight: true
+		// Impedance
+		makeAnswer('zEqMag', 'Input Impedance per Phase', cAbs(zEq), 'Ω', {
+			symbolLatex: 'Z_{\\text{eq}}',
+			decimals: 3,
+			group: 'impedance',
+			formatted: fmtComplex(zEq, 'Ω', 3)
 		}),
-		makeAnswer('tShaftNm', 'Shaft Output Torque', tShaftNm, 'N·m', {
-			symbolLatex: 'T_{o/p}',
-			decimals: 2,
-			highlight: true
+		// Power & Efficiency
+		makeAnswer('pf', 'Input Power Factor', pf, 'lag', {
+			symbolLatex: '\\cos\\phi_1',
+			decimals: 4,
+			group: 'power'
 		}),
-		makeAnswer('tStartNm', 'Starting Torque (s = 1)', tStartNm, 'N·m', {
-			symbolLatex: 'T_{st}',
-			decimals: 2
+		makeAnswer('pInW', 'Stator Input Power', pInW, 'W', {
+			symbolLatex: 'P_{i/p}',
+			decimals: 1,
+			group: 'power'
 		}),
-		makeAnswer('tMaxNm', 'Breakdown (Max) Torque', tMaxNm, 'N·m', {
-			symbolLatex: 'T_{\\max}',
-			decimals: 2
+		makeAnswer('pStatorCuW', 'Stator Copper Loss', pStatorCuW, 'W', {
+			symbolLatex: 'P_{cu,s}',
+			decimals: 1,
+			group: 'power'
+		}),
+		makeAnswer('pAirGapW', 'Air-Gap Power', pAirGapW, 'W', {
+			symbolLatex: 'P_g',
+			decimals: 1,
+			group: 'power'
+		}),
+		makeAnswer('pRotorCuW', 'Rotor Copper Loss', pRotorCuW, 'W', {
+			symbolLatex: 'P_{cu,r}',
+			decimals: 1,
+			group: 'power'
+		}),
+		makeAnswer('pDevW', 'Developed Power', pDevW, 'W', {
+			symbolLatex: 'P_d',
+			decimals: 1,
+			group: 'power'
+		}),
+		makeAnswer('pOutW', 'Shaft Output Power', pOutW, 'W', {
+			symbolLatex: 'P_{o/p}',
+			decimals: 1,
+			group: 'power'
 		}),
 		makeAnswer('efficiencyPercent', 'Efficiency', efficiencyPercent, '%', {
 			symbolLatex: '\\eta',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'power'
+		}),
+		// Mechanical & Torque
+		makeAnswer('nsRpm', 'Synchronous Speed', nsRpm, 'rpm', {
+			symbolLatex: 'N_s',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('nrRpm', 'Rotor Speed', nrRpm, 'rpm', {
+			symbolLatex: 'N_r',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('tdNm', 'Developed Torque', tdNm, 'N·m', {
+			symbolLatex: 'T_d',
+			decimals: 2,
+			highlight: true,
+			group: 'mechanical'
+		}),
+		makeAnswer('tShaftNm', 'Shaft Output Torque', tShaftNm, 'N·m', {
+			symbolLatex: 'T_{\\text{sh}}',
+			decimals: 2,
+			highlight: true,
+			group: 'mechanical'
+		}),
+		makeAnswer('tStartNm', 'Starting Torque (s = 1)', tStartNm, 'N·m', {
+			symbolLatex: 'T_{st}',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('tMaxNm', 'Breakdown (Max) Torque', tMaxNm, 'N·m', {
+			symbolLatex: 'T_{\\max}',
+			decimals: 2,
+			group: 'mechanical'
+		}),
+		makeAnswer('sMaxT', 'Slip at Breakdown Torque', sMaxT * 100, '%', {
+			symbolLatex: 's_{\\max T}',
+			decimals: 2,
+			group: 'mechanical'
 		})
 	];
 

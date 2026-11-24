@@ -172,18 +172,94 @@
 				value={formatNumValue(value)}
 				oninput={(e) => onUpdate(e.currentTarget.value)}
 				class={cn(
-					'font-engineering min-h-10 w-full rounded-[4px] border border-input bg-card px-2.5 text-base text-foreground transition-colors duration-150 placeholder:text-muted-foreground/60 hover:border-foreground/30 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-8 lg:text-sm',
+					'font-engineering min-h-11 w-full rounded-[4px] border border-input bg-card px-2.5 text-base text-foreground transition-colors duration-150 placeholder:text-muted-foreground/70 hover:border-muted-foreground/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-8 lg:text-sm',
 					unit ? 'pr-11' : 'pr-2.5'
 				)}
 			/>
 			{#if unit}
 				<span
-					class="font-engineering pointer-events-none absolute right-2 text-[11px] text-muted-foreground"
+					aria-hidden="true"
+					class="font-engineering pointer-events-none absolute right-2.5 text-[11px] text-muted-foreground select-none"
 				>
 					{unit}
 				</span>
 			{/if}
 		</div>
+	</div>
+{/snippet}
+
+{#snippet impedanceField(
+	idPrefix: string,
+	label: string,
+	rValue: number | undefined,
+	xValue: number | undefined,
+	onUpdateR: (raw: string) => void,
+	onUpdateX: (raw: string) => void,
+	optional = false
+)}
+	{@const rNum = typeof rValue === 'number' && Number.isFinite(rValue) ? rValue : 0}
+	{@const xNum = typeof xValue === 'number' && Number.isFinite(xValue) ? xValue : 0}
+	{@const hasVal =
+		(typeof rValue === 'number' && Number.isFinite(rValue)) ||
+		(typeof xValue === 'number' && Number.isFinite(xValue))}
+	<div class="flex min-w-0 flex-col gap-1.5" role="group" aria-label={stripSubBraces(label)}>
+		<div class="flex items-baseline justify-between gap-2">
+			<span class="text-xs font-medium text-foreground">{@render richText(label)}</span>
+			{#if optional}
+				<span class="shrink-0 text-[10px] font-normal text-muted-foreground">opt.</span>
+			{/if}
+		</div>
+		<div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-1.5">
+			<div class="flex min-w-0 flex-col gap-1">
+				<label for={`${idPrefix}-r`} class="text-[11px] font-medium text-muted-foreground">
+					R (≥ 0)
+				</label>
+				<input
+					id={`${idPrefix}-r`}
+					type="number"
+					inputmode="decimal"
+					step="any"
+					placeholder={optional ? '0' : 'e.g. 10'}
+					value={formatNumValue(rValue)}
+					oninput={(e) => onUpdateR(e.currentTarget.value)}
+					class="font-engineering min-h-11 w-full rounded-[4px] border border-input bg-card px-2.5 text-base text-foreground transition-colors duration-150 placeholder:text-muted-foreground/70 hover:border-muted-foreground/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-8 lg:text-sm"
+				/>
+			</div>
+			<span
+				aria-hidden="true"
+				class="flex h-11 items-center justify-center px-0.5 font-engineering text-xs font-semibold text-muted-foreground select-none lg:h-8"
+			>
+				+ j
+			</span>
+			<div class="flex min-w-0 flex-col gap-1">
+				<label for={`${idPrefix}-x`} class="text-[11px] font-medium text-muted-foreground">
+					X
+				</label>
+				<div class="relative flex items-center">
+					<input
+						id={`${idPrefix}-x`}
+						type="number"
+						inputmode="decimal"
+						step="any"
+						placeholder={optional ? '0' : 'e.g. 5'}
+						value={formatNumValue(xValue)}
+						oninput={(e) => onUpdateX(e.currentTarget.value)}
+						class="font-engineering min-h-11 w-full rounded-[4px] border border-input bg-card px-2.5 pr-8 text-base text-foreground transition-colors duration-150 placeholder:text-muted-foreground/70 hover:border-muted-foreground/50 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 lg:min-h-8 lg:pr-7 lg:text-sm"
+					/>
+					<span
+						aria-hidden="true"
+						class="pointer-events-none absolute right-2.5 font-engineering text-xs text-muted-foreground select-none lg:right-2 lg:text-[11px]"
+					>
+						Ω
+					</span>
+				</div>
+			</div>
+		</div>
+		{#if hasVal && (rNum !== 0 || xNum !== 0)}
+			<p class="font-engineering text-[11px] leading-tight text-muted-foreground">
+				= {rNum} {xNum >= 0 ? '+' : '−'} j{Math.abs(xNum)} Ω
+			</p>
+		{/if}
 	</div>
 {/snippet}
 
@@ -199,7 +275,7 @@
 		<div
 			role="radiogroup"
 			aria-label={stripSubBraces(label)}
-			class="grid gap-1 rounded-[4px] border border-border bg-muted/80 p-0.5"
+			class="grid gap-0.5 rounded-[4px] border border-border bg-surface-rail p-0.5"
 			style="grid-template-columns: repeat({options.length}, minmax(0, 1fr));"
 		>
 			{#each options as opt (opt.value)}
@@ -210,9 +286,9 @@
 					aria-checked={active}
 					onclick={() => onSelect(opt.value)}
 					class={cn(
-						'inline-flex min-h-10 cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-8',
+						'inline-flex min-h-11 cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-7 lg:text-[11px]',
 						active
-							? 'border-border/90 bg-card font-semibold text-foreground'
+							? 'border-border bg-card font-semibold text-foreground shadow-2xs'
 							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 					)}
 				>
@@ -298,12 +374,14 @@
 			</div>
 
 			{#if s.loadMode === 'impedance'}
-				<div class="grid grid-cols-2 gap-2.5 border-t border-border pt-3 sm:gap-3">
-					{@render numField('3ph-r', 'Load Resistance R{φ}', 'Ω', s.loadR, (raw) =>
-						patch({ loadR: parseRequiredNumber(raw) })
-					)}
-					{@render numField('3ph-x', 'Load Reactance X{φ}', 'Ω', s.loadX, (raw) =>
-						patch({ loadX: parseRequiredNumber(raw) })
+				<div class="border-t border-border pt-3">
+					{@render impedanceField(
+						'3ph-zload',
+						'Per-Phase Load Impedance Z{φ} (R + jX)',
+						s.loadR,
+						s.loadX,
+						(raw) => patch({ loadR: parseRequiredNumber(raw) }),
+						(raw) => patch({ loadX: parseRequiredNumber(raw) })
 					)}
 				</div>
 			{:else}
@@ -342,20 +420,13 @@
 				</div>
 			{/if}
 
-			<div class="grid grid-cols-2 gap-2.5 border-t border-border pt-3 sm:gap-3">
-				{@render numField(
-					'3ph-lr',
-					'Line Resistance R{line}',
-					'Ω',
+			<div class="border-t border-border pt-3">
+				{@render impedanceField(
+					'3ph-zline',
+					'Line Impedance Z{line} (R + jX)',
 					s.lineR,
-					(raw) => patch({ lineR: parseOptionalNumber(raw) }),
-					true
-				)}
-				{@render numField(
-					'3ph-lx',
-					'Line Reactance X{line}',
-					'Ω',
 					s.lineX,
+					(raw) => patch({ lineR: parseOptionalNumber(raw) }),
 					(raw) => patch({ lineX: parseOptionalNumber(raw) }),
 					true
 				)}

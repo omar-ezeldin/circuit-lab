@@ -1,16 +1,13 @@
 <script lang="ts">
-	import {
-		AlertTriangle,
-		BookOpen,
-		ChevronDown,
-		ChevronsDownUp,
-		ChevronsUpDown,
-		Info,
-		XCircle
-	} from 'lucide-svelte';
-	import { Accordion, AccordionItem, Badge } from '$lib/components/ui';
+	import { AlertTriangle, BookOpen, ChevronDown, Compass, XCircle } from 'lucide-svelte';
 	import { MathBlock } from '$lib/components/results';
-	import type { MachineQuestionTypeMeta, MachineSolveResult } from '$lib/machines';
+	import PhasorDiagram from '$lib/components/results/PhasorDiagram.svelte';
+	import type {
+		MachineAnswerGroup,
+		MachineAnswerItem,
+		MachineQuestionTypeMeta,
+		MachineSolveResult
+	} from '$lib/machines';
 	import { cn } from '$lib/utils';
 
 	type Props = {
@@ -21,40 +18,54 @@
 
 	let { result, meta, class: className }: Props = $props();
 
-	const STEP_SURFACE_BG = 'color-mix(in srgb, var(--surface-rail) 55%, var(--card))';
-
-	let expandedSteps = $state<string[]>([]);
+	let phasorOpen = $state(true);
 	let formulasOpen = $state(false);
-	let lastResetKey = '';
 
-	const stepIds = $derived(
-		result.steps.map((_, index) => `machine-step-${meta.category}-${index}`)
-	);
+	const GROUP_ORDER: Array<{ id: MachineAnswerGroup; title: string }> = [
+		{ id: 'voltages', title: 'Voltages' },
+		{ id: 'currents', title: 'Currents' },
+		{ id: 'power', title: 'Power & Efficiency' },
+		{ id: 'impedance', title: 'Impedances & Parameters' },
+		{ id: 'mechanical', title: 'Mechanical & Torque' },
+		{ id: 'magnetic', title: 'Magnetic Quantities' },
+		{ id: 'general', title: 'General Quantities' }
+	];
 
-	// Expand all derivation steps when switching topic or step count changes
-	$effect(() => {
-		const key = `${result.questionType}:${result.steps.length}`;
-		if (key !== lastResetKey) {
-			lastResetKey = key;
-			expandedSteps = [...stepIds];
+	const highlightedAnswers = $derived(result.answers.filter((a) => a.highlight));
+
+	const groupedAnswers = $derived.by(() => {
+		const buckets = new Map<MachineAnswerGroup, MachineAnswerItem[]>();
+		for (const answer of result.answers) {
+			const group: MachineAnswerGroup = answer.group ?? 'general';
+			const list = buckets.get(group);
+			if (list) {
+				list.push(answer);
+			} else {
+				buckets.set(group, [answer]);
+			}
 		}
+		return GROUP_ORDER.map((g) => ({
+			id: g.id,
+			title: g.title,
+			items: buckets.get(g.id) ?? []
+		})).filter((g) => g.items.length > 0);
 	});
 
-	const allExpanded = $derived(
-		stepIds.length > 0 && stepIds.every((id) => expandedSteps.includes(id))
-	);
+	function valueColorClass(group?: MachineAnswerGroup): string {
+		if (group === 'voltages') return 'text-voltage';
+		if (group === 'currents') return 'text-branch-current';
+		return 'text-foreground';
+	}
 
-	function toggleAllSteps() {
-		if (allExpanded) {
-			expandedSteps = [];
-		} else {
-			expandedSteps = [...stepIds];
-		}
+	function highlightAccentClass(group?: MachineAnswerGroup): string {
+		if (group === 'voltages') return 'border-voltage/35 bg-voltage/5';
+		if (group === 'currents') return 'border-branch-current/35 bg-branch-current/5';
+		return 'border-border bg-surface-rail/45';
 	}
 
 	/**
 	 * Splits multi-formula LaTeX strings joined at top-level by `, \quad`, `; \quad`, or `\qquad`
-	 * into stacked lines so long multi-equation steps fit cleanly on narrow phone viewports.
+	 * into stacked lines so long multi-equation formulas fit cleanly on narrow phone viewports.
 	 */
 	function splitLatexLines(latex: string): string[] {
 		const parts: string[] = [];
@@ -95,28 +106,39 @@
 </script>
 
 <section
-	aria-label="Live solution and derivation"
+	aria-label="Live results"
 	class={cn('flex min-w-0 flex-col bg-card', className)}
 >
-	<!-- Header Strip -->
+	<!-- Header Strip (unified with Circuits FinalAnswersCard telemetry strip) -->
 	<div
-		class="flex items-center justify-between gap-2 border-b border-border bg-surface-rail/60 px-3 py-2 sm:px-4"
+		class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-rail/60 px-3 py-2 sm:px-4"
 	>
-		<div class="flex min-w-0 items-center gap-2">
-			<span
-				class={cn(
-					'h-2 w-2 shrink-0 rounded-full',
-					result.valid ? 'bg-branch-current' : 'bg-destructive'
-				)}
-				aria-hidden="true"
-			></span>
-			<h2 class="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
-				Live Solution
+		<div class="flex min-w-0 items-center gap-1.5">
+			<h2 class="truncate text-xs font-semibold text-foreground">
+				{meta.shortLabel}
 			</h2>
+			<span
+				class="shrink-0 rounded-[3px] border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning"
+			>
+				Beta
+			</span>
 		</div>
-		<Badge variant="outline" class="max-w-44 shrink-0 truncate text-[10px]">
-			{meta.shortLabel}
-		</Badge>
+
+		{#if result.valid}
+			<span
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[4px] border border-branch-current/35 bg-branch-current/10 px-2 py-0.5 font-engineering text-[11px] font-medium text-branch-current"
+			>
+				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-branch-current" aria-hidden="true"></span>
+				<span>Solved</span>
+			</span>
+		{:else}
+			<span
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[4px] border border-destructive/40 bg-destructive/10 px-2 py-0.5 font-engineering text-[11px] font-medium text-destructive"
+			>
+				<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true"></span>
+				<span>Invalid</span>
+			</span>
+		{/if}
 	</div>
 
 	{#if !result.valid}
@@ -130,153 +152,174 @@
 				<div class="min-w-0 space-y-1">
 					<p class="font-semibold text-destructive">Invalid Parameter Combination</p>
 					<p class="leading-relaxed text-foreground/90">
-						{result.error ?? 'Check the input values and ensure all required parameters are positive and finite.'}
+						{result.error ??
+							'Check the input values and ensure all required parameters are positive and finite.'}
 					</p>
 				</div>
 			</div>
 		</div>
 	{:else}
-		<!-- Optional Solver Warnings -->
-		{#if result.warnings && result.warnings.length > 0}
-			<div class="border-b border-warning/30 bg-warning/8 px-3 py-2.5 sm:px-4">
-				<div class="flex items-start gap-2 text-xs text-foreground">
-					<AlertTriangle class="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
-					<ul class="min-w-0 space-y-1">
-						{#each result.warnings as warning, i (i)}
-							<li class="leading-snug">{warning}</li>
-						{/each}
-					</ul>
+		<div class="flex min-w-0 flex-col divide-y divide-border">
+			<!-- Optional Solver Warnings -->
+			{#if result.warnings && result.warnings.length > 0}
+				<div class="bg-warning/8 px-3 py-2.5 sm:px-4">
+					<div class="flex items-start gap-2 text-xs text-foreground">
+						<AlertTriangle class="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
+						<ul class="min-w-0 space-y-1">
+							{#each result.warnings as warning, i (i)}
+								<li class="leading-snug">{warning}</li>
+							{/each}
+						</ul>
+					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		<!-- Final Answers Grid -->
-		<div class="border-b border-border px-3 py-3 sm:px-4 sm:py-3.5">
-			<div class="mb-2 flex items-baseline justify-between gap-2 sm:mb-2.5">
-				<h3 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-					Final Answers
-				</h3>
-				<span class="font-engineering text-[11px] text-muted-foreground">
-					{result.answers.length} {result.answers.length === 1 ? 'quantity' : 'quantities'}
-				</span>
-			</div>
+			<!-- 1. Primary Highlights KPI Strip -->
+			{#if highlightedAnswers.length > 0}
+				<section aria-label="Key Results Summary" class="px-3 py-3 sm:px-4 sm:py-3.5">
+					<div class="mb-2.5 flex items-baseline justify-between gap-2">
+						<h3 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+							Final Answers
+						</h3>
+						<span class="font-engineering text-[11px] text-muted-foreground">
+							{result.answers.length} {result.answers.length === 1 ? 'quantity' : 'quantities'}
+						</span>
+					</div>
 
-			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-				{#each result.answers as answer (answer.key)}
-					<div
-						class={cn(
-							'flex flex-col justify-between gap-1 rounded-[4px] border px-3 py-2',
-							answer.highlight
-								? 'border-primary/45 bg-primary/6'
-								: 'border-border bg-surface-rail/35'
-						)}
-					>
-						<div class="flex items-center justify-between gap-1.5">
-							<span
-								class="truncate text-[11px] font-medium text-muted-foreground"
-								title={answer.label}
-							>
-								{answer.label}
-							</span>
-							{#if answer.symbolLatex}
-								<MathBlock
-									latex={answer.symbolLatex}
-									display={false}
-									class="shrink-0 text-[11px] text-foreground/85"
-								/>
-							{/if}
-						</div>
-						<div class="flex items-baseline justify-between gap-1.5">
-							<span
+					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+						{#each highlightedAnswers as answer (answer.key)}
+							<div
 								class={cn(
-									'font-engineering text-sm font-semibold tracking-tight break-all',
-									answer.highlight ? 'text-primary' : 'text-foreground'
+									'flex min-w-0 flex-col justify-between gap-1 rounded-[4px] border px-3 py-2',
+									highlightAccentClass(answer.group)
 								)}
 							>
-								{answer.formatted}
-							</span>
-							{#if answer.unit && !answer.formatted.endsWith(answer.unit)}
-								<span class="font-engineering shrink-0 text-[11px] text-muted-foreground">
-									{answer.unit}
-								</span>
-							{/if}
-						</div>
+								<div class="flex items-center justify-between gap-1.5">
+									<span
+										class="truncate text-[11px] font-medium text-muted-foreground"
+										title={answer.label}
+									>
+										{answer.label}
+									</span>
+									{#if answer.symbolLatex}
+										<MathBlock
+											latex={answer.symbolLatex}
+											display={false}
+											class="shrink-0 text-[11px] text-foreground/85"
+										/>
+									{/if}
+								</div>
+								<div class="flex items-baseline justify-between gap-1.5">
+									<span
+										class={cn(
+											'font-engineering text-sm font-semibold tabular-nums tracking-tight break-words',
+											valueColorClass(answer.group)
+										)}
+									>
+										{answer.formatted}
+									</span>
+									{#if answer.unit && !answer.formatted.endsWith(answer.unit)}
+										<span class="font-engineering shrink-0 text-[11px] text-muted-foreground">
+											{answer.unit}
+										</span>
+									{/if}
+								</div>
+							</div>
+						{/each}
 					</div>
-				{/each}
-			</div>
-		</div>
+				</section>
+			{/if}
 
-		<!-- Step-by-Step Derivation -->
-		<div class="flex min-w-0 flex-col border-b border-border">
-			<div class="flex items-center justify-between gap-2 px-3 pt-3 pb-2 sm:px-4">
-				<div class="min-w-0">
-					<h3 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-						Step-by-Step Derivation
-					</h3>
-					<p class="text-[11px] text-muted-foreground">
-						Lecture formulas &amp; numerical substitution
-					</p>
-				</div>
-				{#if result.steps.length > 0}
+			<!-- 2. Shared Phasor Diagram (3-Phase & On-Load Transformer) -->
+			{#if result.phasors && result.phasors.length > 0}
+				<section aria-label="Phasor Diagram" class="min-w-0">
 					<button
 						type="button"
-						onclick={toggleAllSteps}
-						class="inline-flex min-h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-[4px] border border-border bg-card px-2.5 text-xs font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-7 lg:px-2 lg:text-[11px]"
+						aria-expanded={phasorOpen}
+						onclick={() => (phasorOpen = !phasorOpen)}
+						class="flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-4 lg:min-h-9"
 					>
-						{#if allExpanded}
-							<ChevronsDownUp class="size-3.5" aria-hidden="true" />
-							<span>Collapse</span>
-						{:else}
-							<ChevronsUpDown class="size-3.5" aria-hidden="true" />
-							<span>Expand All</span>
-						{/if}
+						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-foreground">
+							<Compass class="size-3.5 text-voltage" aria-hidden="true" />
+							<span>Phasor Diagram</span>
+							<span class="font-engineering font-normal text-muted-foreground">
+								({result.phasors.length})
+							</span>
+						</span>
+						<ChevronDown
+							class={cn(
+								'size-4 text-muted-foreground transition-transform duration-150',
+								phasorOpen && 'rotate-180'
+							)}
+							aria-hidden="true"
+						/>
 					</button>
-				{/if}
-			</div>
 
-			{#if result.steps.length > 0}
-				<Accordion variant="flush" type="multiple" bind:value={expandedSteps}>
-					{#each result.steps as step, index (stepIds[index])}
-						<AccordionItem value={stepIds[index]} title={`${index + 1}. ${step.title}`}>
-							<div
-								class="min-w-0 space-y-1.5 rounded-[4px] border border-border/80 bg-surface-rail/55 px-2.5 py-2 sm:px-3"
-								style="--math-fade-bg: {STEP_SURFACE_BG};"
-							>
-								<div class="flex min-w-0 flex-col gap-0.5">
-									{#each splitLatexLines(step.formulaLatex) as line, lineIdx (lineIdx)}
-										<MathBlock latex={line} />
-									{/each}
-								</div>
-								{#if step.substitutionLatex}
-									<div class="flex min-w-0 flex-col gap-0.5 border-t border-border/60 pt-1">
-										{#each splitLatexLines(step.substitutionLatex) as line, lineIdx (lineIdx)}
-											<MathBlock latex={line} />
-										{/each}
-									</div>
-								{/if}
-								{#if step.resultLatex}
-									<div class="flex min-w-0 flex-col gap-0.5 border-t border-border/60 pt-1">
-										{#each splitLatexLines(step.resultLatex) as line, lineIdx (lineIdx)}
-											<MathBlock latex={line} class="text-primary" />
-										{/each}
-									</div>
-								{/if}
-								{#if step.note}
-									<div class="flex items-start gap-1.5 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">
-										<Info class="mt-0.5 size-3 shrink-0 text-primary" aria-hidden="true" />
-										<span class="leading-snug">{step.note}</span>
-									</div>
-								{/if}
-							</div>
-						</AccordionItem>
-					{/each}
-				</Accordion>
+					{#if phasorOpen}
+						<div class="border-t border-border/60 px-3 py-3 sm:px-4">
+							<PhasorDiagram customPhasors={result.phasors} />
+						</div>
+					{/if}
+				</section>
 			{/if}
+
+			<!-- 3. Exhaustive Grouped Results Sections -->
+			{#each groupedAnswers as group (group.id)}
+				<section aria-label={group.title} class="px-3 py-3 sm:px-4 sm:py-3.5">
+					<div class="mb-2 flex items-baseline justify-between gap-2">
+						<h3 class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+							{group.title}
+						</h3>
+						<span class="font-engineering text-[10px] text-muted-foreground">
+							{group.items.length}
+						</span>
+					</div>
+
+					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+						{#each group.items as answer (answer.key)}
+							<div
+								class="flex min-w-0 flex-col justify-between gap-1 rounded-[4px] border border-border bg-surface-rail/35 px-3 py-2"
+							>
+								<div class="flex items-center justify-between gap-1.5">
+									<span
+										class="truncate text-[11px] font-medium text-muted-foreground"
+										title={answer.label}
+									>
+										{answer.label}
+									</span>
+									{#if answer.symbolLatex}
+										<MathBlock
+											latex={answer.symbolLatex}
+											display={false}
+											class="shrink-0 text-[11px] text-foreground/85"
+										/>
+									{/if}
+								</div>
+								<div class="flex items-baseline justify-between gap-1.5">
+									<span
+										class={cn(
+											'font-engineering text-xs font-semibold tabular-nums tracking-tight break-words sm:text-sm',
+											valueColorClass(answer.group)
+										)}
+									>
+										{answer.formatted}
+									</span>
+									{#if answer.unit && !answer.formatted.endsWith(answer.unit)}
+										<span class="font-engineering shrink-0 text-[10px] text-muted-foreground">
+											{answer.unit}
+										</span>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</section>
+			{/each}
 		</div>
 	{/if}
 
 	<!-- Collapsible Key Formulas Reference -->
-	<div class="bg-surface-rail/30">
+	<div class="border-t border-border bg-surface-rail/30">
 		<button
 			type="button"
 			aria-expanded={formulasOpen}

@@ -27,14 +27,16 @@ function stripTags(html: string): string {
 }
 
 describe('Machines UI Components', () => {
-	it('renders MachinesWorkbench default state (OC & SC Tests) with plain-English UI, live solution, and zero KaTeX errors', () => {
+	it('renders MachinesWorkbench default state (OC & SC Tests) with Beta badges, results-only panel, and zero KaTeX errors', () => {
 		const { body } = render(MachinesWorkbench);
 		const visibleText = stripTags(body);
 
 		expect(body).toContain('OC &amp; SC Tests');
 		expect(body).toContain('Course Examples');
 		expect(body).toContain('Final Answers');
-		expect(body).toContain('Step-by-Step Derivation');
+		expect(body).toContain('Beta');
+		expect(body).toContain('Solved');
+		expect(body).not.toContain('Step-by-Step Derivation');
 		expect(body).toContain('Key Formulas');
 		expect(body).toContain('class="katex"');
 		expect(body).not.toContain('katex-error');
@@ -45,7 +47,27 @@ describe('Machines UI Components', () => {
 		expect(visibleText).not.toMatch(/\bQT-[A-Z0-9]+-\d+\b/);
 	});
 
-	it('renders MachinesWorkbench across all 14 topics with plain-English labels, valid answers, and zero KaTeX errors', () => {
+	it('renders shared PhasorDiagram on Three-Phase (QT-3PH-1) and On-Load Transformer (QT-XFMR-3)', () => {
+		const { body: threePhaseBody } = render(MachinesWorkbench, {
+			props: { initialQuestionTypeId: 'QT-3PH-1' }
+		});
+		expect(threePhaseBody).toContain('Phasor Diagram');
+		expect(threePhaseBody).toContain('AC Polar Phasor Diagram');
+		expect(threePhaseBody).toContain('Van');
+		expect(threePhaseBody).toContain('Vab');
+		expect(threePhaseBody).not.toContain('Step-by-Step Derivation');
+		expect(threePhaseBody).not.toContain('katex-error');
+
+		const { body: xfmrBody } = render(MachinesWorkbench, {
+			props: { initialQuestionTypeId: 'QT-XFMR-3' }
+		});
+		expect(xfmrBody).toContain('Phasor Diagram');
+		expect(xfmrBody).toContain('AC Polar Phasor Diagram');
+		expect(xfmrBody).not.toContain('Step-by-Step Derivation');
+		expect(xfmrBody).not.toContain('katex-error');
+	});
+
+	it('renders MachinesWorkbench across all 14 topics with plain-English labels, Beta badges, valid answers, and zero KaTeX errors', () => {
 		for (const qtId of ALL_QUESTION_TYPES) {
 			const meta = MACHINE_QUESTION_TYPES[qtId];
 			const { body } = render(MachinesWorkbench, {
@@ -58,6 +80,10 @@ describe('Machines UI Components', () => {
 			expect(body, `${qtId} should render its plain-English title`).toContain(escapeHtml(meta.title));
 			expect(body, `${qtId} should render its plain-English short label`).toContain(
 				escapeHtml(meta.shortLabel)
+			);
+			expect(body, `${qtId} should render Beta badge`).toContain('Beta');
+			expect(body, `${qtId} should not render Step-by-Step Derivation wall`).not.toContain(
+				'Step-by-Step Derivation'
 			);
 			expect(body, `${qtId} should render first preset label`).toContain(
 				escapeHtml(meta.presets[0].label)

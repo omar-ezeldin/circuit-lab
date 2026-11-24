@@ -17,9 +17,16 @@ import {
 	isFiniteNonNeg,
 	isFiniteNum,
 	isFinitePos,
-	makeAnswer
+	makeAnswer,
+	wrapDeg
 } from './math-helpers';
-import type { MachineAnswerItem, MachineSolveResult, MachineStep, ThreePhaseInput } from './types';
+import type {
+	MachineAnswerItem,
+	MachinePhasor,
+	MachineSolveResult,
+	MachineStep,
+	ThreePhaseInput
+} from './types';
 
 const TITLE = 'Balanced Three-Phase Circuit Analysis';
 
@@ -185,70 +192,259 @@ export function solveThreePhase(input: ThreePhaseInput): MachineSolveResult {
 		});
 	}
 
+	const iLineAngle = wrapDeg(iLineDeg);
+	const iBAngle = wrapDeg(iLineAngle - 120);
+	const iCAngle = wrapDeg(iLineAngle + 120);
+
+	const iAbAngle = wrapDeg(iLineAngle + 30);
+	const iBcAngle = wrapDeg(iLineAngle - 90);
+	const iCaAngle = wrapDeg(iLineAngle + 150);
+
+	const vSrcAnAngle = wrapDeg(vSourcePhaseDeg);
+	const vSrcBnAngle = wrapDeg(vSourcePhaseDeg - 120);
+	const vSrcCnAngle = wrapDeg(vSourcePhaseDeg + 120);
+	const vSrcAbAngle = wrapDeg(vSourcePhaseDeg + 30);
+	const vSrcBcAngle = wrapDeg(vSourcePhaseDeg - 90);
+	const vSrcCaAngle = wrapDeg(vSourcePhaseDeg + 150);
+
+	const pfLabel = thetaDeg > 1e-6 ? 'lag' : thetaDeg < -1e-6 ? 'lead' : 'unity';
+	const pLineTotalW = 3 * sLinePhase.re;
+	const pSourceTotalW = 3 * sSourcePhase.re;
+	const transmissionEffPercent = pSourceTotalW > 0 ? (pTotal / pSourceTotalW) * 100 : 100;
+
+	// ---- Voltages (Load side: all 6 positive-sequence phasors) ----
 	answers.push(
-		makeAnswer('iLineMag', 'Line Current (RMS)', iLineMag, 'A', {
-			symbolLatex: '|\\bar{I}_L|',
+		makeAnswer('vAn', 'Load Phase Voltage a', vANMag, 'V', {
+			symbolLatex: '\\bar{V}_{an}',
+			decimals: 2,
+			group: 'voltages',
+			formatted: fmtPolar(vANMag, 0, 'V', 2)
+		}),
+		makeAnswer('vBn', 'Load Phase Voltage b', vANMag, 'V', {
+			symbolLatex: '\\bar{V}_{bn}',
+			decimals: 2,
+			group: 'voltages',
+			formatted: fmtPolar(vANMag, -120, 'V', 2)
+		}),
+		makeAnswer('vCn', 'Load Phase Voltage c', vANMag, 'V', {
+			symbolLatex: '\\bar{V}_{cn}',
+			decimals: 2,
+			group: 'voltages',
+			formatted: fmtPolar(vANMag, 120, 'V', 2)
+		}),
+		makeAnswer('vAb', 'Load Line Voltage ab', vLineLoad, 'V', {
+			symbolLatex: '\\bar{V}_{ab}',
 			decimals: 2,
 			highlight: true,
-			formatted: fmtPolar(iLineMag, iLineDeg, 'A', 2)
+			group: 'voltages',
+			formatted: fmtPolar(vLineLoad, 30, 'V', 2)
 		}),
-		makeAnswer('iPhaseMag', 'Load Phase Current (RMS)', iPhaseMag, 'A', {
-			symbolLatex: '|\\bar{I}_\\phi|',
+		makeAnswer('vBc', 'Load Line Voltage bc', vLineLoad, 'V', {
+			symbolLatex: '\\bar{V}_{bc}',
 			decimals: 2,
-			formatted: fmtPolar(iPhaseMag, iPhaseDeg, 'A', 2)
+			group: 'voltages',
+			formatted: fmtPolar(vLineLoad, -90, 'V', 2)
 		}),
-		makeAnswer('vLineLoad', 'Load Line Voltage', vLineLoad, 'V', {
-			symbolLatex: 'V_L',
-			decimals: 2
-		}),
-		makeAnswer('vPhaseLoad', 'Load Phase Voltage', vPhaseLoad, 'V', {
-			symbolLatex: 'V_\\phi',
-			decimals: 2
-		}),
-		makeAnswer('pTotalW', 'Total Active Power', pTotal, 'W', {
-			symbolLatex: 'P_{\\text{tot}}',
+		makeAnswer('vCa', 'Load Line Voltage ca', vLineLoad, 'V', {
+			symbolLatex: '\\bar{V}_{ca}',
 			decimals: 2,
-			highlight: true,
-			formatted: `${fmt(pTotal / 1000, 3)} kW`
-		}),
-		makeAnswer('qTotalVar', 'Total Reactive Power', qTotal, 'VAR', {
-			symbolLatex: 'Q_{\\text{tot}}',
-			decimals: 2,
-			formatted: `${fmt(qTotal / 1000, 3)} kVAR`
-		}),
-		makeAnswer('sTotalVA', 'Total Apparent Power', sTotalMag, 'VA', {
-			symbolLatex: '|S_{\\text{tot}}|',
-			decimals: 2,
-			formatted: `${fmt(sTotalMag / 1000, 3)} kVA`
-		}),
-		makeAnswer('pfLoad', 'Load Power Factor', pfLoad, thetaDeg > 1e-6 ? 'lag' : thetaDeg < -1e-6 ? 'lead' : 'unity', {
-			symbolLatex: '\\cos\\theta_\\phi',
-			decimals: 4
+			group: 'voltages',
+			formatted: fmtPolar(vLineLoad, 150, 'V', 2)
 		})
 	);
 
 	if (hasLine) {
 		answers.push(
-			makeAnswer('vSourcePhaseMag', 'Source Phase Voltage', vSourcePhaseMag, 'V', {
-				symbolLatex: '\\bar{V}_{an}',
+			makeAnswer('vSourcePhaseMag', 'Source Phase Voltage a', vSourcePhaseMag, 'V', {
+				symbolLatex: '\\bar{V}_{AN,\\text{src}}',
 				decimals: 2,
 				highlight: true,
-				formatted: fmtPolar(vSourcePhaseMag, vSourcePhaseDeg, 'V', 2)
+				group: 'voltages',
+				formatted: fmtPolar(vSourcePhaseMag, vSrcAnAngle, 'V', 2)
 			}),
-			makeAnswer('vSourceLineMag', 'Source Line Voltage', vSourceLineMag, 'V', {
-				symbolLatex: 'V_{L,\\text{src}}',
-				decimals: 2
-			}),
-			makeAnswer('sSourcePhaseVA', 'Source Apparent Power (Per Phase)', sSourcePhaseMag, 'VA', {
-				symbolLatex: 'S_{an}',
+			makeAnswer('vBnSrc', 'Source Phase Voltage b', vSourcePhaseMag, 'V', {
+				symbolLatex: '\\bar{V}_{BN,\\text{src}}',
 				decimals: 2,
+				group: 'voltages',
+				formatted: fmtPolar(vSourcePhaseMag, vSrcBnAngle, 'V', 2)
+			}),
+			makeAnswer('vCnSrc', 'Source Phase Voltage c', vSourcePhaseMag, 'V', {
+				symbolLatex: '\\bar{V}_{CN,\\text{src}}',
+				decimals: 2,
+				group: 'voltages',
+				formatted: fmtPolar(vSourcePhaseMag, vSrcCnAngle, 'V', 2)
+			}),
+			makeAnswer('vSourceLineMag', 'Source Line Voltage ab', vSourceLineMag, 'V', {
+				symbolLatex: '\\bar{V}_{AB,\\text{src}}',
+				decimals: 2,
+				group: 'voltages',
+				formatted: fmtPolar(vSourceLineMag, vSrcAbAngle, 'V', 2)
+			}),
+			makeAnswer('vBcSrc', 'Source Line Voltage bc', vSourceLineMag, 'V', {
+				symbolLatex: '\\bar{V}_{BC,\\text{src}}',
+				decimals: 2,
+				group: 'voltages',
+				formatted: fmtPolar(vSourceLineMag, vSrcBcAngle, 'V', 2)
+			}),
+			makeAnswer('vCaSrc', 'Source Line Voltage ca', vSourceLineMag, 'V', {
+				symbolLatex: '\\bar{V}_{CA,\\text{src}}',
+				decimals: 2,
+				group: 'voltages',
+				formatted: fmtPolar(vSourceLineMag, vSrcCaAngle, 'V', 2)
+			})
+		);
+	}
+
+	// ---- Currents (All 3 line currents + all 3 Delta phase currents when Delta) ----
+	answers.push(
+		makeAnswer('iLineMag', 'Line Current a', iLineMag, 'A', {
+			symbolLatex: '\\bar{I}_a',
+			decimals: 2,
+			highlight: true,
+			group: 'currents',
+			formatted: fmtPolar(iLineMag, iLineAngle, 'A', 2)
+		}),
+		makeAnswer('iB', 'Line Current b', iLineMag, 'A', {
+			symbolLatex: '\\bar{I}_b',
+			decimals: 2,
+			group: 'currents',
+			formatted: fmtPolar(iLineMag, iBAngle, 'A', 2)
+		}),
+		makeAnswer('iC', 'Line Current c', iLineMag, 'A', {
+			symbolLatex: '\\bar{I}_c',
+			decimals: 2,
+			group: 'currents',
+			formatted: fmtPolar(iLineMag, iCAngle, 'A', 2)
+		})
+	);
+
+	if (input.loadConnection === 'D') {
+		answers.push(
+			makeAnswer('iPhaseMag', 'Delta Phase Current ab', iPhaseMag, 'A', {
+				symbolLatex: '\\bar{I}_{ab}',
+				decimals: 2,
+				group: 'currents',
+				formatted: fmtPolar(iPhaseMag, iAbAngle, 'A', 2)
+			}),
+			makeAnswer('iBc', 'Delta Phase Current bc', iPhaseMag, 'A', {
+				symbolLatex: '\\bar{I}_{bc}',
+				decimals: 2,
+				group: 'currents',
+				formatted: fmtPolar(iPhaseMag, iBcAngle, 'A', 2)
+			}),
+			makeAnswer('iCa', 'Delta Phase Current ca', iPhaseMag, 'A', {
+				symbolLatex: '\\bar{I}_{ca}',
+				decimals: 2,
+				group: 'currents',
+				formatted: fmtPolar(iPhaseMag, iCaAngle, 'A', 2)
+			})
+		);
+	}
+
+	// ---- Power (Total 3-phase + Per-phase + optional line/source/efficiency) ----
+	answers.push(
+		makeAnswer('pTotalW', 'Total Active Power', pTotal, 'W', {
+			symbolLatex: 'P_{3\\phi}',
+			decimals: 2,
+			highlight: true,
+			group: 'power',
+			formatted: `${fmt(pTotal / 1000, 3)} kW`
+		}),
+		makeAnswer('qTotalVar', 'Total Reactive Power', qTotal, 'VAR', {
+			symbolLatex: 'Q_{3\\phi}',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(qTotal / 1000, 3)} kVAR`
+		}),
+		makeAnswer('sTotalVA', 'Total Apparent Power', sTotalMag, 'VA', {
+			symbolLatex: '|S_{3\\phi}|',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(sTotalMag / 1000, 3)} kVA`
+		}),
+		makeAnswer('pfLoad', 'Load Power Factor', pfLoad, pfLabel, {
+			symbolLatex: '\\cos\\theta',
+			decimals: 4,
+			highlight: !hasLine,
+			group: 'power'
+		}),
+		makeAnswer('thetaDeg', 'Load Phase Angle', thetaDeg, '°', {
+			symbolLatex: '\\theta',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('pPhaseW', 'Per-Phase Active Power', sLoadPhase.re, 'W', {
+			symbolLatex: 'P_\\phi',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(sLoadPhase.re / 1000, 3)} kW`
+		}),
+		makeAnswer('qPhaseVar', 'Per-Phase Reactive Power', sLoadPhase.im, 'VAR', {
+			symbolLatex: 'Q_\\phi',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(sLoadPhase.im / 1000, 3)} kVAR`
+		}),
+		makeAnswer('sPhaseVA', 'Per-Phase Apparent Power', cAbs(sLoadPhase), 'VA', {
+			symbolLatex: '|S_\\phi|',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(cAbs(sLoadPhase) / 1000, 3)} kVA`
+		})
+	);
+
+	if (hasLine) {
+		answers.push(
+			makeAnswer('pLineTotalW', 'Total Line Active Loss', pLineTotalW, 'W', {
+				symbolLatex: 'P_{\\text{line}}',
+				decimals: 2,
+				group: 'power',
+				formatted: `${fmt(pLineTotalW / 1000, 3)} kW`
+			}),
+			makeAnswer('pSourceTotalW', 'Total Source Active Power', pSourceTotalW, 'W', {
+				symbolLatex: 'P_{\\text{src}}',
+				decimals: 2,
+				group: 'power',
+				formatted: `${fmt(pSourceTotalW / 1000, 3)} kW`
+			}),
+			makeAnswer('sSourcePhaseVA', 'Source Complex Power (Per Phase)', sSourcePhaseMag, 'VA', {
+				symbolLatex: 'S_{\\text{src},\\phi}',
+				decimals: 2,
+				group: 'power',
 				formatted: fmtPolar(sSourcePhaseMag / 1000, sSourcePhaseDeg, 'kVA', 2)
 			}),
 			makeAnswer('sLinePhaseVA', 'Line Complex Loss (Per Phase)', sLinePhaseMag, 'VA', {
 				symbolLatex: 'S_{\\text{line},\\phi}',
 				decimals: 2,
+				group: 'power',
 				formatted: fmtPolar(sLinePhaseMag / 1000, sLinePhaseDeg, 'kVA', 2)
+			}),
+			makeAnswer('efficiencyPercent', 'Transmission Efficiency', transmissionEffPercent, '%', {
+				symbolLatex: '\\eta',
+				decimals: 2,
+				group: 'power'
 			})
+		);
+	}
+
+	// ---- Phasor Vectors for Shared PhasorDiagram.svelte ----
+	const phasors: MachinePhasor[] = [
+		{ id: 'van', label: 'Van', kind: 'voltage', magnitude: vANMag, angleDeg: 0, unit: 'V', formatted: fmtPolar(vANMag, 0, 'V', 2) },
+		{ id: 'vbn', label: 'Vbn', kind: 'voltage', magnitude: vANMag, angleDeg: -120, unit: 'V', formatted: fmtPolar(vANMag, -120, 'V', 2) },
+		{ id: 'vcn', label: 'Vcn', kind: 'voltage', magnitude: vANMag, angleDeg: 120, unit: 'V', formatted: fmtPolar(vANMag, 120, 'V', 2) },
+		{ id: 'vab', label: 'Vab', kind: 'voltage', magnitude: vLineLoad, angleDeg: 30, unit: 'V', formatted: fmtPolar(vLineLoad, 30, 'V', 2) },
+		{ id: 'vbc', label: 'Vbc', kind: 'voltage', magnitude: vLineLoad, angleDeg: -90, unit: 'V', formatted: fmtPolar(vLineLoad, -90, 'V', 2) },
+		{ id: 'vca', label: 'Vca', kind: 'voltage', magnitude: vLineLoad, angleDeg: 150, unit: 'V', formatted: fmtPolar(vLineLoad, 150, 'V', 2) },
+		{ id: 'ia', label: 'Ia', kind: 'current', magnitude: iLineMag, angleDeg: iLineAngle, unit: 'A', formatted: fmtPolar(iLineMag, iLineAngle, 'A', 2) },
+		{ id: 'ib', label: 'Ib', kind: 'current', magnitude: iLineMag, angleDeg: iBAngle, unit: 'A', formatted: fmtPolar(iLineMag, iBAngle, 'A', 2) },
+		{ id: 'ic', label: 'Ic', kind: 'current', magnitude: iLineMag, angleDeg: iCAngle, unit: 'A', formatted: fmtPolar(iLineMag, iCAngle, 'A', 2) }
+	];
+
+	if (input.loadConnection === 'D') {
+		phasors.push(
+			{ id: 'iab', label: 'Iab', kind: 'current', magnitude: iPhaseMag, angleDeg: iAbAngle, unit: 'A', formatted: fmtPolar(iPhaseMag, iAbAngle, 'A', 2) },
+			{ id: 'ibc', label: 'Ibc', kind: 'current', magnitude: iPhaseMag, angleDeg: iBcAngle, unit: 'A', formatted: fmtPolar(iPhaseMag, iBcAngle, 'A', 2) },
+			{ id: 'ica', label: 'Ica', kind: 'current', magnitude: iPhaseMag, angleDeg: iCaAngle, unit: 'A', formatted: fmtPolar(iPhaseMag, iCaAngle, 'A', 2) }
 		);
 	}
 
@@ -257,6 +453,7 @@ export function solveThreePhase(input: ThreePhaseInput): MachineSolveResult {
 		questionType: 'QT-3PH-1',
 		title: TITLE,
 		answers,
+		phasors,
 		values: {
 			vLineLoad,
 			vPhaseLoad,
@@ -279,14 +476,15 @@ export function solveThreePhase(input: ThreePhaseInput): MachineSolveResult {
 			sSourcePhaseVA: sSourcePhaseMag,
 			sSourcePhaseDeg,
 			sSourcePhaseKVA: sSourcePhaseMag / 1000,
-			pSourceTotalW: 3 * sSourcePhase.re,
+			pSourceTotalW,
 			qSourceTotalVar: 3 * sSourcePhase.im,
 			sSourceTotalVA: 3 * sSourcePhaseMag,
 			sLinePhaseVA: sLinePhaseMag,
 			sLinePhaseDeg,
 			sLinePhaseKVA: sLinePhaseMag / 1000,
-			pLineTotalW: 3 * sLinePhase.re,
-			qLineTotalVar: 3 * sLinePhase.im
+			pLineTotalW,
+			qLineTotalVar: 3 * sLinePhase.im,
+			efficiencyPercent: transmissionEffPercent
 		},
 		steps
 	};

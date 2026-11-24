@@ -1,5 +1,5 @@
 export { default as MathBlock } from './MathBlock.svelte';
-export { default as PhasorDiagram } from './PhasorDiagram.svelte';
+export { default as PhasorDiagram, type CustomPhasor } from './PhasorDiagram.svelte';
 export { default as UnknownSolutionCard } from './UnknownSolutionCard.svelte';
 export { default as FinalAnswersCard } from './FinalAnswersCard.svelte';
 export { default as MethodStepsPanel } from './MethodStepsPanel.svelte';

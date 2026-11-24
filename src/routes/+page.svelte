@@ -62,7 +62,7 @@
 		encodeCircuitToHash,
 		type CircuitDocument
 	} from '$lib/engine';
-	import { AC_ENABLED, DEPLOY_COMMIT_SHA, IS_STAGING } from '$lib/env';
+	import { AC_ENABLED, DEPLOY_COMMIT_SHA, IS_STAGING, MACHINES_ENABLED } from '$lib/env';
 	import { circuit } from '$lib/stores/circuit.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { cn } from '$lib/utils';
@@ -101,6 +101,12 @@
 	$effect(() => {
 		if (circuit.document.mode !== 'ac') {
 			freqPopoverOpen = false;
+		}
+	});
+
+	$effect(() => {
+		if (!MACHINES_ENABLED && workspaceMode !== 'circuits') {
+			workspaceMode = 'circuits';
 		}
 	});
 
@@ -350,7 +356,7 @@
 				</Tooltip>
 			{/if}
 
-			<div class="flex shrink-0 items-center gap-1 sm:gap-1.5 lg:gap-2 xl:min-w-0">
+			<div class="flex shrink-0 items-center gap-0.5 sm:gap-1.5 lg:gap-2 xl:min-w-0">
 				<svg
 					width="18"
 					height="18"
@@ -373,7 +379,7 @@
 				{#if IS_STAGING}
 					<span
 						title={DEPLOY_COMMIT_SHA ? `Staging deployment (${DEPLOY_COMMIT_SHA})` : 'Staging deployment'}
-						class="shrink-0 rounded-[3px] border border-warning/45 bg-warning/10 px-1 py-0.5 font-engineering text-[9px] font-semibold uppercase tracking-wide text-warning lg:px-1.5 lg:text-[10px]"
+						class="shrink-0 rounded-[3px] border border-warning/45 bg-warning/10 px-1 py-0.5 font-engineering text-[8px] font-semibold uppercase tracking-wide text-warning sm:text-[9px] lg:px-1.5 lg:text-[10px]"
 					>
 						<span class="lg:hidden">STG</span><span class="hidden lg:inline">STAGING</span>
 					</span>
@@ -400,7 +406,7 @@
 					freqPopoverOpen = false;
 					workspaceMenuOpen = !workspaceMenuOpen;
 				}}
-				class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-[4px] border border-border bg-card px-2 text-xs font-semibold text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:hidden"
+				class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-border bg-card px-1.5 text-[11px] font-semibold text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:hidden"
 			>
 				<span>{workspaceMode === 'machines' ? 'Machines' : 'Circuits'}</span>
 				<ChevronDown
@@ -439,20 +445,32 @@
 					type="button"
 					role="radio"
 					aria-checked={workspaceMode === 'machines'}
+					disabled={!MACHINES_ENABLED}
+					aria-disabled={!MACHINES_ENABLED ? 'true' : undefined}
+					title={!MACHINES_ENABLED ? 'Electrical Machines — Coming Soon' : undefined}
+					aria-label={!MACHINES_ENABLED ? 'Electrical Machines coming soon' : undefined}
 					onclick={() => {
+						if (!MACHINES_ENABLED) return;
 						workspaceMode = 'machines';
 						mobileMenuOpen = false;
 						freqPopoverOpen = false;
 					}}
 					class={cn(
-						'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+						'relative inline-flex h-full items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
 						'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-						workspaceMode === 'machines'
-							? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
-							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
+						!MACHINES_ENABLED
+							? 'cursor-not-allowed border-transparent font-medium text-muted-foreground opacity-60'
+							: workspaceMode === 'machines'
+								? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+								: 'cursor-pointer border-transparent font-medium text-muted-foreground hover:text-foreground'
 					)}
 				>
-					Machines
+					<span>Machines</span>
+					{#if !MACHINES_ENABLED}
+						<span class="ml-1 font-engineering text-[9px] uppercase text-muted-foreground">
+							Soon
+						</span>
+					{/if}
 				</button>
 			</div>
 
@@ -481,7 +499,7 @@
 						aria-checked={circuit.document.mode === 'dc'}
 						onclick={() => circuit.setMode('dc')}
 						class={cn(
-							'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-1.5 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+							'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-1.5 text-[11px] transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 sm:text-xs lg:px-2.5 lg:after:hidden',
 							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 							circuit.document.mode === 'dc'
 								? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
@@ -503,7 +521,7 @@
 							circuit.setMode('ac');
 						}}
 						class={cn(
-							'relative inline-flex h-full items-center justify-center rounded-[3px] border px-1.5 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+							'relative inline-flex h-full items-center justify-center rounded-[3px] border px-1.5 text-[11px] transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 sm:text-xs lg:px-2.5 lg:after:hidden',
 							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 							!AC_ENABLED
 								? 'cursor-not-allowed border-transparent font-medium text-muted-foreground opacity-60'
@@ -533,7 +551,7 @@
 							workspaceMenuOpen = false;
 							freqPopoverOpen = !freqPopoverOpen;
 						}}
-						class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-input bg-card px-1.5 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
+						class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-input bg-card px-1 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
 					>
 						<span class="md:hidden">{formatFrequency(circuit.document.frequencyHz).replace(/\s+/g, '')}</span>
 						<span class="hidden md:inline">{formatFrequency(circuit.document.frequencyHz)}</span>
@@ -594,7 +612,7 @@
 			{/if}
 		</div>
 
-		<!-- Right: Dialog Launchers, Theme Toggle, Overflow Menu & Inspector Toggle -->
+		<!-- Right: Mode Actions, Unified AI Import, Theme Toggle, Overflow Menu & Inspector Toggle -->
 		<div class="flex shrink-0 items-center gap-0.5 sm:gap-1">
 			{#if workspaceMode === 'circuits'}
 				<div class="hidden items-center gap-0.5 md:flex">
@@ -607,7 +625,7 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							class="relative h-8 w-8 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
 							aria-label="Browse circuit presets"
 							onclick={() => (presetsOpen = true)}
 						>
@@ -619,24 +637,12 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							class="relative h-8 w-8 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
 							aria-label="Import or export Circuit Lab JSON"
 							onclick={() => (jsonOpen = true)}
 						>
 							<FileCode2 />
 							<span class="hidden lg:inline">JSON</span>
-						</Button>
-					</Tooltip>
-					<Tooltip content="Convert circuit image or textbook netlist via AI" side="bottom">
-						<Button
-							variant="ghost"
-							size="sm"
-							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
-							aria-label="AI Import"
-							onclick={() => (aiOpen = true)}
-						>
-							<ScanLine />
-							<span class="hidden lg:inline">AI Import</span>
 						</Button>
 					</Tooltip>
 					<Tooltip
@@ -646,7 +652,7 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							class="relative h-8 w-8 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
 							aria-label="Copy shareable circuit link"
 							onclick={handleCopyShareLink}
 						>
@@ -667,7 +673,7 @@
 						<Button
 							variant="ghost"
 							size="icon"
-							class="relative h-9 w-9 after:absolute after:-inset-1 lg:h-7 lg:w-7 lg:after:hidden"
+							class="relative h-8 w-8 after:absolute after:-inset-1.5 lg:h-7 lg:w-7 lg:after:hidden"
 							aria-label="Workbench settings"
 							onclick={() => (settingsOpen = true)}
 						>
@@ -676,24 +682,11 @@
 					</Tooltip>
 				</div>
 			{:else}
-				<Tooltip content="Import an Electrical Machines problem via AI" side="bottom">
-					<Button
-						variant="outline"
-						size="sm"
-						class="relative h-8 gap-1 px-2 text-xs font-medium text-foreground after:absolute after:-inset-1 hover:bg-accent hover:text-foreground sm:px-2.5 lg:h-7 lg:after:hidden"
-						aria-label="AI Import"
-						onclick={() => (machineAiImportOpen = true)}
-					>
-						<ScanLine class="size-3.5 shrink-0" aria-hidden="true" />
-						<span class="sm:hidden">AI</span>
-						<span class="hidden sm:inline">AI Import</span>
-					</Button>
-				</Tooltip>
 				<Tooltip content="Workbench preferences & IEEE/IEC standard" side="bottom">
 					<Button
 						variant="ghost"
 						size="icon"
-						class="relative h-9 w-9 after:absolute after:-inset-1 sm:h-10 sm:w-10 md:h-9 md:w-9 lg:h-7 lg:w-7 lg:after:hidden"
+						class="relative h-8 w-8 after:absolute after:-inset-1.5 sm:h-9 sm:w-9 md:h-8 md:w-8 lg:h-7 lg:w-7 lg:after:hidden"
 						aria-label="Workbench settings"
 						onclick={() => (settingsOpen = true)}
 					>
@@ -702,11 +695,37 @@
 				</Tooltip>
 			{/if}
 
+			<!-- Unified AI Import (identical slot immediately left of Theme toggle in BOTH Circuits & Machines modes) -->
+			<Tooltip
+				content={workspaceMode === 'machines'
+					? 'Import an Electrical Machines problem via AI'
+					: 'Convert circuit image or textbook netlist via AI'}
+				side="bottom"
+			>
+				<Button
+					variant="outline"
+					size="sm"
+					class="relative h-8 w-7 gap-0 px-0 text-[11px] font-medium text-foreground after:absolute after:-inset-2 hover:bg-accent hover:text-foreground min-[400px]:w-auto min-[400px]:gap-1 min-[400px]:px-1.5 min-[400px]:after:-inset-y-2 min-[400px]:after:inset-x-0 sm:px-2.5 sm:text-xs lg:h-7 lg:after:hidden"
+					aria-label="AI Import"
+					onclick={() => {
+						if (workspaceMode === 'machines') {
+							machineAiImportOpen = true;
+						} else {
+							aiOpen = true;
+						}
+					}}
+				>
+					<ScanLine class="size-3.5 shrink-0" aria-hidden="true" />
+					<span class="hidden min-[400px]:inline sm:hidden">AI</span>
+					<span class="hidden sm:inline">AI Import</span>
+				</Button>
+			</Tooltip>
+
 			<Tooltip content={isDark ? 'Switch to light mode' : 'Switch to dark mode'} side="bottom">
 				<Button
 					variant="ghost"
 					size="icon"
-					class="relative h-9 w-9 after:absolute after:-inset-1 sm:h-10 sm:w-10 md:h-9 md:w-9 lg:h-7 lg:w-7 lg:after:hidden"
+					class="relative h-8 w-7 after:absolute after:-inset-2 min-[400px]:w-8 min-[400px]:after:-inset-1.5 sm:h-9 sm:w-9 md:h-8 md:w-8 lg:h-7 lg:w-7 lg:after:hidden"
 					aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
 					onclick={toggleMode}
 				>
@@ -723,7 +742,7 @@
 				<Button
 					variant="ghost"
 					size="icon"
-					class="relative h-9 w-9 after:absolute after:-inset-1 sm:h-10 sm:w-10 md:hidden"
+					class="relative h-8 w-7 after:absolute after:-inset-2 min-[400px]:w-8 min-[400px]:after:-inset-1.5 sm:h-9 sm:w-9 md:hidden"
 					aria-label="More actions"
 					aria-haspopup="menu"
 					aria-expanded={mobileMenuOpen}
@@ -802,31 +821,41 @@
 				type="button"
 				role="menuitemradio"
 				aria-checked={workspaceMode === 'machines'}
+				disabled={!MACHINES_ENABLED}
+				aria-disabled={!MACHINES_ENABLED ? 'true' : undefined}
+				title={!MACHINES_ENABLED ? 'Electrical Machines — Coming Soon' : undefined}
 				onclick={() => {
+					if (!MACHINES_ENABLED) return;
 					workspaceMode = 'machines';
 					workspaceMenuOpen = false;
 					mobileMenuOpen = false;
 					freqPopoverOpen = false;
 				}}
 				class={cn(
-					'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[4px] px-3 py-2 text-left text-sm transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-					workspaceMode === 'machines'
-						? 'bg-accent/60 font-semibold text-foreground'
-						: 'font-medium text-foreground/85'
+					'flex min-h-11 w-full items-center justify-between gap-2 rounded-[4px] px-3 py-2 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+					!MACHINES_ENABLED
+						? 'cursor-not-allowed font-medium text-muted-foreground opacity-60'
+						: workspaceMode === 'machines'
+							? 'cursor-pointer bg-accent/60 font-semibold text-foreground hover:bg-accent'
+							: 'cursor-pointer font-medium text-foreground/85 hover:bg-accent'
 				)}
 			>
 				<span class="flex items-center gap-2">
 					<Cog class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 					<span>Machines</span>
 				</span>
-				{#if workspaceMode === 'machines'}
+				{#if !MACHINES_ENABLED}
+					<Badge variant="secondary" class="px-1.5 py-0 font-engineering text-[10px] uppercase">
+						Soon
+					</Badge>
+				{:else if workspaceMode === 'machines'}
 					<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
 				{/if}
 			</button>
 		</div>
 	{/if}
 
-	{#if workspaceMode === 'machines'}
+	{#if MACHINES_ENABLED && workspaceMode === 'machines'}
 		<MachinesWorkbench bind:this={machinesWorkbenchRef} />
 	{:else}
 
@@ -1145,7 +1174,6 @@
 						solution={circuit.solution}
 						document={circuit.document}
 						selectedComponentId={circuit.selectedComponentId}
-						bind:activeMethod={circuit.activeMethod}
 						onSelectComponent={(id) => circuit.selectComponent(id)}
 						onSelectTheveninComponent={(id) => circuit.setTheveninComponent(id)}
 						onApplyUnknownSolution={(idx) => circuit.applySolvedUnknown(idx)}
@@ -1219,7 +1247,6 @@
 								solution={circuit.solution}
 								document={circuit.document}
 								selectedComponentId={circuit.selectedComponentId}
-								bind:activeMethod={circuit.activeMethod}
 								onSelectComponent={(id) => circuit.selectComponent(id)}
 								onSelectTheveninComponent={(id) => circuit.setTheveninComponent(id)}
 								onApplyUnknownSolution={(idx) => circuit.applySolvedUnknown(idx)}

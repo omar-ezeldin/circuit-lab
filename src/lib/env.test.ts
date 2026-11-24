@@ -4,7 +4,8 @@ import {
 	getSettingsStorageKey,
 	resolveAcEnabled,
 	resolveDeployEnv,
-	resolveGaMeasurementId
+	resolveGaMeasurementId,
+	resolveMachinesEnabled
 } from './env';
 
 describe('resolveDeployEnv', () => {
@@ -89,5 +90,32 @@ describe('resolveAcEnabled', () => {
 		expect(resolveAcEnabled('production', 'yes')).toBe(true);
 		expect(resolveAcEnabled('staging', 'invalid')).toBe(true);
 		expect(resolveAcEnabled('development', '0')).toBe(true);
+	});
+});
+
+describe('resolveMachinesEnabled', () => {
+	it('disables Machines by default on production and enables it on staging and development', () => {
+		expect(resolveMachinesEnabled('production')).toBe(false);
+		expect(resolveMachinesEnabled('staging')).toBe(true);
+		expect(resolveMachinesEnabled('development')).toBe(true);
+	});
+
+	it('honors explicit true/false overrides regardless of environment', () => {
+		expect(resolveMachinesEnabled('production', 'true')).toBe(true);
+		expect(resolveMachinesEnabled('production', '  TRUE ')).toBe(true);
+		expect(resolveMachinesEnabled('production', 'false')).toBe(false);
+		expect(resolveMachinesEnabled('staging', 'false')).toBe(false);
+		expect(resolveMachinesEnabled('staging', '  FALSE ')).toBe(false);
+		expect(resolveMachinesEnabled('development', ' False ')).toBe(false);
+		expect(resolveMachinesEnabled('development', 'true')).toBe(true);
+	});
+
+	it('ignores empty or unrecognized overrides and falls back to env default', () => {
+		expect(resolveMachinesEnabled('production', '')).toBe(false);
+		expect(resolveMachinesEnabled('production', '   ')).toBe(false);
+		expect(resolveMachinesEnabled('production', 'yes')).toBe(false);
+		expect(resolveMachinesEnabled('staging', '')).toBe(true);
+		expect(resolveMachinesEnabled('staging', 'invalid')).toBe(true);
+		expect(resolveMachinesEnabled('development', '0')).toBe(true);
 	});
 });

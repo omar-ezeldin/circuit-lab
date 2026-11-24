@@ -111,21 +111,40 @@ export function solveLinearMagneticCircuit(input: LinearMagneticInput): MachineS
 			makeAnswer('bGapT', 'Air-Gap Flux Density', bGap, 'T', {
 				symbolLatex: 'B_g',
 				decimals: 4,
-				highlight: true
+				highlight: true,
+				group: 'magnetic'
+			}),
+			makeAnswer('bCoreT', 'Core Flux Density', bCore, 'T', {
+				symbolLatex: 'B_c',
+				decimals: 4,
+				group: 'magnetic'
 			}),
 			makeAnswer('hCore', 'Core Field Intensity', hCore, 'A/m', {
 				symbolLatex: 'H_c',
 				decimals: 2,
-				highlight: true
+				highlight: true,
+				group: 'magnetic'
+			}),
+			makeAnswer('hGap', 'Air-Gap Field Intensity', hGap, 'A/m', {
+				symbolLatex: 'H_g',
+				decimals: 2,
+				group: 'magnetic'
 			}),
 			makeAnswer('magnetization', 'Core Magnetization', magnetization, 'A/m', {
 				symbolLatex: 'M',
 				decimals: 2,
-				highlight: true
+				highlight: true,
+				group: 'magnetic'
+			}),
+			makeAnswer('mmfAt', 'Magnetomotive Force', input.turns * currentA, 'At', {
+				symbolLatex: '\\mathcal{F}',
+				decimals: 2,
+				group: 'magnetic'
 			}),
 			makeAnswer('currentA', 'Coil Current', currentA, 'A', {
 				symbolLatex: 'I',
-				decimals: 4
+				decimals: 4,
+				group: 'currents'
 			})
 		);
 
@@ -214,29 +233,59 @@ export function solveLinearMagneticCircuit(input: LinearMagneticInput): MachineS
 	});
 
 	answers.push(
-		makeAnswer('rCore', 'Core Reluctance', rCore, 'At/Wb', { symbolLatex: '\\mathcal{R}_c', decimals: 1 }),
-		makeAnswer('rGap', 'Air-Gap Reluctance', rGap, 'At/Wb', { symbolLatex: '\\mathcal{R}_g', decimals: 1 }),
-		makeAnswer('rEq', 'Total Reluctance', rEq, 'At/Wb', { symbolLatex: '\\mathcal{R}_{\\text{eq}}', decimals: 1 }),
 		makeAnswer('currentA', 'Coil Current', currentA, 'A', {
 			symbolLatex: 'I',
 			decimals: 4,
-			highlight: true
+			highlight: true,
+			group: 'currents'
 		}),
-		makeAnswer('fluxWb', 'Magnetic Flux', fluxWb, 'Wb', {
-			symbolLatex: '\\Phi',
-			decimals: 4,
-			formatted: `${fmt(fluxWb * 1000, 4)} mWb`
-		}),
-		makeAnswer('bGapT', 'Air-Gap Flux Density', bGap, 'T', { symbolLatex: 'B_g', decimals: 4 }),
 		makeAnswer('inductanceH', 'Coil Inductance', inductanceH, 'H', {
 			symbolLatex: 'L',
 			decimals: 4,
-			highlight: true
+			highlight: true,
+			group: 'magnetic'
 		}),
 		makeAnswer('storedEnergyJ', 'Stored Magnetic Energy', storedEnergyJ, 'J', {
 			symbolLatex: 'W_f',
 			decimals: 4,
-			highlight: true
+			highlight: true,
+			group: 'magnetic'
+		}),
+		makeAnswer('fluxWb', 'Magnetic Flux', fluxWb, 'Wb', {
+			symbolLatex: '\\Phi',
+			decimals: 4,
+			group: 'magnetic',
+			formatted: `${fmt(fluxWb * 1000, 4)} mWb`
+		}),
+		makeAnswer('bCoreT', 'Core Flux Density', bCore, 'T', {
+			symbolLatex: 'B_c',
+			decimals: 4,
+			group: 'magnetic'
+		}),
+		makeAnswer('bGapT', 'Air-Gap Flux Density', bGap, 'T', {
+			symbolLatex: 'B_g',
+			decimals: 4,
+			group: 'magnetic'
+		}),
+		makeAnswer('mmfAt', 'Magnetomotive Force', mmfAt, 'At', {
+			symbolLatex: '\\mathcal{F}',
+			decimals: 2,
+			group: 'magnetic'
+		}),
+		makeAnswer('rCore', 'Core Reluctance', rCore, 'At/Wb', {
+			symbolLatex: '\\mathcal{R}_c',
+			decimals: 1,
+			group: 'magnetic'
+		}),
+		makeAnswer('rGap', 'Air-Gap Reluctance', rGap, 'At/Wb', {
+			symbolLatex: '\\mathcal{R}_g',
+			decimals: 1,
+			group: 'magnetic'
+		}),
+		makeAnswer('rEq', 'Total Reluctance', rEq, 'At/Wb', {
+			symbolLatex: '\\mathcal{R}_{\\text{eq}}',
+			decimals: 1,
+			group: 'magnetic'
 		})
 	);
 
@@ -269,7 +318,8 @@ export function solveLinearMagneticCircuit(input: LinearMagneticInput): MachineS
 		answers.push(
 			makeAnswer('qualityFactor', 'Quality Factor', qFactor, '', {
 				symbolLatex: 'Q',
-				decimals: 2
+				decimals: 2,
+				group: 'general'
 			})
 		);
 	}
@@ -412,16 +462,42 @@ export function solveNonlinearOrParallelMagnetic(input: NonlinearMagneticInput):
 			});
 
 			answers.push(
-				makeAnswer('bCoreT', 'Core Flux Density', bCore, 'T', { symbolLatex: 'B_c', decimals: 4 }),
-				makeAnswer('hCore', 'Core Field Intensity', hCore, 'At/m', { symbolLatex: 'H_c', decimals: 2 }),
-				makeAnswer('hGap', 'Air-Gap Field Intensity', hGap, 'At/m', { symbolLatex: 'H_g', decimals: 2 }),
 				makeAnswer('currentA', 'Required Current', currentA, 'A', {
 					symbolLatex: 'I',
 					decimals: 4,
-					highlight: true
+					highlight: true,
+					group: 'currents'
 				}),
-				makeAnswer('muR', 'Operating Relative Permeability', muR, '', { symbolLatex: '\\mu_r', decimals: 1 }),
-				makeAnswer('rCore', 'Core Reluctance', rCore, 'At/Wb', { symbolLatex: '\\mathcal{R}_c', decimals: 1 })
+				makeAnswer('mmfTotal', 'Total MMF', mmfTotal, 'At', {
+					symbolLatex: '\\mathcal{F}',
+					decimals: 2,
+					group: 'magnetic'
+				}),
+				makeAnswer('bCoreT', 'Core Flux Density', bCore, 'T', {
+					symbolLatex: 'B_c',
+					decimals: 4,
+					group: 'magnetic'
+				}),
+				makeAnswer('hCore', 'Core Field Intensity', hCore, 'At/m', {
+					symbolLatex: 'H_c',
+					decimals: 2,
+					group: 'magnetic'
+				}),
+				makeAnswer('hGap', 'Air-Gap Field Intensity', hGap, 'At/m', {
+					symbolLatex: 'H_g',
+					decimals: 2,
+					group: 'magnetic'
+				}),
+				makeAnswer('muR', 'Operating Relative Permeability', muR, '', {
+					symbolLatex: '\\mu_r',
+					decimals: 1,
+					group: 'magnetic'
+				}),
+				makeAnswer('rCore', 'Core Reluctance', rCore, 'At/Wb', {
+					symbolLatex: '\\mathcal{R}_c',
+					decimals: 1,
+					group: 'magnetic'
+				})
 			);
 
 			return {
@@ -498,11 +574,24 @@ export function solveNonlinearOrParallelMagnetic(input: NonlinearMagneticInput):
 					symbolLatex: '\\Phi',
 					decimals: 4,
 					highlight: true,
+					group: 'magnetic',
 					formatted: `${fmt(fluxWb * 1000, 4)} mWb`
 				}),
-				makeAnswer('bCoreT', 'Core Flux Density', bCore, 'T', { symbolLatex: 'B_c', decimals: 4 }),
-				makeAnswer('hCore', 'Core Field Intensity', hCore, 'At/m', { symbolLatex: 'H_c', decimals: 2 }),
-				makeAnswer('muR', 'Operating Relative Permeability', muR, '', { symbolLatex: '\\mu_r', decimals: 1 })
+				makeAnswer('bCoreT', 'Core Flux Density', bCore, 'T', {
+					symbolLatex: 'B_c',
+					decimals: 4,
+					group: 'magnetic'
+				}),
+				makeAnswer('hCore', 'Core Field Intensity', hCore, 'At/m', {
+					symbolLatex: 'H_c',
+					decimals: 2,
+					group: 'magnetic'
+				}),
+				makeAnswer('muR', 'Operating Relative Permeability', muR, '', {
+					symbolLatex: '\\mu_r',
+					decimals: 1,
+					group: 'magnetic'
+				})
 			);
 
 			return {
@@ -600,22 +689,29 @@ export function solveNonlinearOrParallelMagnetic(input: NonlinearMagneticInput):
 	});
 
 	answers.push(
-		makeAnswer('phiCenterWb', 'Center Limb Flux', phiCenter, 'Wb', {
-			symbolLatex: '\\Phi_c',
+		makeAnswer('currentA', 'Required Coil Current', currentA, 'A', {
+			symbolLatex: 'I',
 			decimals: 4,
-			formatted: `${fmt(phiCenter * 1000, 4)} mWb`
+			highlight: true,
+			group: 'currents'
 		}),
 		makeAnswer('phiTotalWb', 'Total Flux (Excited Limb)', phiTotal, 'Wb', {
 			symbolLatex: '\\Phi_T',
 			decimals: 4,
 			highlight: true,
+			group: 'magnetic',
 			formatted: `${fmt(phiTotal * 1000, 4)} mWb`
 		}),
-		makeAnswer('mmfTotal', 'Required MMF', mmfTotal, 'At', { symbolLatex: '\\mathcal{F}', decimals: 2 }),
-		makeAnswer('currentA', 'Required Coil Current', currentA, 'A', {
-			symbolLatex: 'I',
+		makeAnswer('phiCenterWb', 'Center Limb Flux', phiCenter, 'Wb', {
+			symbolLatex: '\\Phi_c',
 			decimals: 4,
-			highlight: true
+			group: 'magnetic',
+			formatted: `${fmt(phiCenter * 1000, 4)} mWb`
+		}),
+		makeAnswer('mmfTotal', 'Required MMF', mmfTotal, 'At', {
+			symbolLatex: '\\mathcal{F}',
+			decimals: 2,
+			group: 'magnetic'
 		})
 	);
 
@@ -757,29 +853,54 @@ export function solveVariableReluctanceActuator(input: VariableReluctanceInput):
 	];
 
 	const answers: MachineAnswerItem[] = [
-		makeAnswer('rEq1', 'Initial Total Reluctance', rEq1, 'At/Wb', { symbolLatex: '\\mathcal{R}_{\\text{eq},1}', decimals: 1 }),
-		makeAnswer('i1A', 'Initial Current', i1, 'A', { symbolLatex: 'I_1', decimals: 3, highlight: true }),
+		makeAnswer('i1A', 'Initial Current', i1, 'A', {
+			symbolLatex: 'I_1',
+			decimals: 3,
+			highlight: true,
+			group: 'currents'
+		}),
+		makeAnswer('i2A', 'Final Current', i2, 'A', {
+			symbolLatex: 'I_2',
+			decimals: 3,
+			group: 'currents'
+		}),
+		makeAnswer('rEq1', 'Initial Total Reluctance', rEq1, 'At/Wb', {
+			symbolLatex: '\\mathcal{R}_{\\text{eq},1}',
+			decimals: 1,
+			group: 'magnetic'
+		}),
 		makeAnswer('l1H', 'Initial Inductance', l1, 'H', {
 			symbolLatex: 'L_1',
 			decimals: 4,
+			group: 'magnetic',
 			formatted: `${fmt(l1 * 1000, 3)} mH`
 		}),
-		makeAnswer('wf1J', 'Initial Stored Energy', wf1, 'J', { symbolLatex: 'W_{f1}', decimals: 3 }),
-		makeAnswer('i2A', 'Final Current', i2, 'A', { symbolLatex: 'I_2', decimals: 3 }),
-		makeAnswer('wf2J', 'Final Stored Energy', wf2, 'J', { symbolLatex: 'W_{f2}', decimals: 3 }),
-		makeAnswer('force1N', 'Initial Closing Force Magnitude', Math.abs(force1N), 'N', {
+		makeAnswer('wf1J', 'Initial Stored Energy', wf1, 'J', {
+			symbolLatex: 'W_{f1}',
+			decimals: 3,
+			group: 'magnetic'
+		}),
+		makeAnswer('wf2J', 'Final Stored Energy', wf2, 'J', {
+			symbolLatex: 'W_{f2}',
+			decimals: 3,
+			group: 'magnetic'
+		}),
+		makeAnswer('force1N', 'Initial Closing Force', Math.abs(force1N), 'N', {
 			symbolLatex: '|F_{\\text{fld},1}|',
-			decimals: 2
+			decimals: 2,
+			group: 'mechanical'
 		}),
 		makeAnswer('wmJ', 'Mechanical Work Done', wmJ, 'J', {
 			symbolLatex: 'W_m',
 			decimals: 3,
-			highlight: true
+			highlight: true,
+			group: 'mechanical'
 		}),
 		makeAnswer('wmKwh', 'Mechanical Work (kWh)', wmKwh, 'kWh', {
 			symbolLatex: 'W_{m,\\text{kWh}}',
 			decimals: 4,
-			highlight: true
+			highlight: true,
+			group: 'mechanical'
 		})
 	];
 

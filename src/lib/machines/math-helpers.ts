@@ -1,4 +1,9 @@
-import type { MachineAnswerItem, MachineQuestionTypeId, MachineSolveResult } from './types';
+import type {
+	MachineAnswerGroup,
+	MachineAnswerItem,
+	MachineQuestionTypeId,
+	MachineSolveResult
+} from './types';
 
 export const MU_0 = 4 * Math.PI * 1e-7;
 export const HP_TO_WATTS = 746;
@@ -58,6 +63,13 @@ export function cParallel(a: Complex, b: Complex): Complex {
 	return cDiv(cMul(a, b), cAdd(a, b));
 }
 
+export function wrapDeg(deg: number): number {
+	let d = ((deg + 180) % 360 + 360) % 360 - 180;
+	if (Math.abs(d + 180) < 1e-9) d = 180;
+	if (Math.abs(d) < 1e-9) d = 0;
+	return d;
+}
+
 export function isFinitePos(v: unknown): v is number {
 	return typeof v === 'number' && Number.isFinite(v) && v > 0;
 }
@@ -113,7 +125,13 @@ export function makeAnswer(
 	label: string,
 	value: number,
 	unit: string,
-	options?: { symbolLatex?: string; decimals?: number; highlight?: boolean; formatted?: string }
+	options?: {
+		symbolLatex?: string;
+		decimals?: number;
+		highlight?: boolean;
+		formatted?: string;
+		group?: MachineAnswerGroup;
+	}
 ): MachineAnswerItem {
 	const decimals = options?.decimals ?? 4;
 	const formatted =
@@ -125,7 +143,8 @@ export function makeAnswer(
 		value,
 		unit,
 		formatted,
-		highlight: options?.highlight
+		highlight: options?.highlight,
+		group: options?.group
 	};
 }
 

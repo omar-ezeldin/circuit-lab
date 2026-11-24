@@ -29,6 +29,25 @@ export interface MachineStep {
 	note?: string;
 }
 
+export type MachineAnswerGroup =
+	| 'voltages'
+	| 'currents'
+	| 'power'
+	| 'impedance'
+	| 'mechanical'
+	| 'magnetic'
+	| 'general';
+
+export interface MachinePhasor {
+	id: string;
+	label: string;
+	kind: 'voltage' | 'current';
+	magnitude: number;
+	angleDeg: number;
+	unit: string;
+	formatted?: string;
+}
+
 export interface MachineAnswerItem {
 	key: string;
 	label: string;
@@ -37,6 +56,7 @@ export interface MachineAnswerItem {
 	unit: string;
 	formatted: string;
 	highlight?: boolean;
+	group?: MachineAnswerGroup;
 }
 
 export interface MachineSolveResult {
@@ -46,6 +66,7 @@ export interface MachineSolveResult {
 	answers: MachineAnswerItem[];
 	values: Record<string, number>;
 	steps: MachineStep[];
+	phasors?: MachinePhasor[];
 	warnings?: string[];
 	error?: string;
 }

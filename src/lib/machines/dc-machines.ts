@@ -50,13 +50,27 @@ export function solveDcEmfAndTorque(input: DcEmfTorqueInput): MachineSolveResult
 		});
 
 		answers.push(
-			makeAnswer('parallelPaths', 'Parallel Paths', parallelPaths, '', { symbolLatex: 'a', decimals: 0 }),
-			makeAnswer('eaV', 'Generated EMF', ea, 'V', { symbolLatex: 'E_a', decimals: 3, highlight: true }),
-			makeAnswer('omegaRadS', 'Angular Speed', omega, 'rad/s', { symbolLatex: '\\omega', decimals: 3 }),
+			makeAnswer('eaV', 'Generated EMF', ea, 'V', {
+				symbolLatex: 'E_a',
+				decimals: 3,
+				highlight: true,
+				group: 'voltages'
+			}),
+			makeAnswer('omegaRadS', 'Angular Speed', omega, 'rad/s', {
+				symbolLatex: '\\omega_m',
+				decimals: 3,
+				group: 'mechanical'
+			}),
 			makeAnswer('ke', 'EMF / Torque Constant', ke, 'N·m/A', {
 				symbolLatex: 'K_e = K_t',
 				decimals: 4,
-				highlight: true
+				highlight: true,
+				group: 'general'
+			}),
+			makeAnswer('parallelPaths', 'Parallel Paths', parallelPaths, '', {
+				symbolLatex: 'a',
+				decimals: 0,
+				group: 'general'
 			})
 		);
 
@@ -81,11 +95,16 @@ export function solveDcEmfAndTorque(input: DcEmfTorqueInput): MachineSolveResult
 				resultLatex: `P_d = ${fmt(pd, 2)}\\text{ W}, \\quad T_d = ${fmt(td, 3)}\\text{ N}\\cdot\\text{m}`
 			});
 			answers.push(
-				makeAnswer('pdW', 'Developed Power', pd, 'W', { symbolLatex: 'P_d', decimals: 2 }),
+				makeAnswer('pdW', 'Developed Power', pd, 'W', {
+					symbolLatex: 'P_d',
+					decimals: 2,
+					group: 'power'
+				}),
 				makeAnswer('tdNm', 'Developed Torque', td, 'N·m', {
 					symbolLatex: 'T_d',
 					decimals: 3,
-					highlight: true
+					highlight: true,
+					group: 'mechanical'
 				})
 			);
 		}
@@ -133,17 +152,37 @@ export function solveDcEmfAndTorque(input: DcEmfTorqueInput): MachineSolveResult
 	});
 
 	answers.push(
-		makeAnswer('eaV', 'Induced EMF', ea, 'V', { symbolLatex: 'E_a', decimals: 3 }),
-		makeAnswer('omegaRadS', 'Angular Speed', omega, 'rad/s', { symbolLatex: '\\omega', decimals: 3 }),
-		makeAnswer('kt', 'Torque / EMF Constant', ke, 'N·m/A', {
-			symbolLatex: 'K_t = K_e',
-			decimals: 4,
-			highlight: true
+		makeAnswer('eaV', 'Induced EMF', ea, 'V', {
+			symbolLatex: 'E_a',
+			decimals: 3,
+			group: 'voltages'
+		}),
+		makeAnswer('ia1A', 'Armature Current', ia, 'A', {
+			symbolLatex: 'I_a',
+			decimals: 3,
+			group: 'currents'
+		}),
+		makeAnswer('pdW', 'Developed Power', pd, 'W', {
+			symbolLatex: 'P_d',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('omegaRadS', 'Angular Speed', omega, 'rad/s', {
+			symbolLatex: '\\omega_m',
+			decimals: 3,
+			group: 'mechanical'
 		}),
 		makeAnswer('td1Nm', 'Developed Torque (Point 1)', td1, 'N·m', {
 			symbolLatex: 'T_{d1}',
 			decimals: 3,
-			highlight: true
+			highlight: true,
+			group: 'mechanical'
+		}),
+		makeAnswer('kt', 'Torque / EMF Constant', ke, 'N·m/A', {
+			symbolLatex: 'K_t = K_e',
+			decimals: 4,
+			highlight: true,
+			group: 'general'
 		})
 	);
 
@@ -172,7 +211,8 @@ export function solveDcEmfAndTorque(input: DcEmfTorqueInput): MachineSolveResult
 			makeAnswer('td2Nm', 'Scaled Developed Torque', td2, 'N·m', {
 				symbolLatex: 'T_{d2}',
 				decimals: 3,
-				highlight: true
+				highlight: true,
+				group: 'mechanical'
 			})
 		);
 	}
@@ -289,24 +329,61 @@ export function solveDcGenerator(input: DcGeneratorInput): MachineSolveResult {
 	};
 
 	answers.push(
-		makeAnswer('iaA', 'Armature Current', iArm, 'A', { symbolLatex: 'I_a', decimals: 2 }),
-		makeAnswer('ifA', 'Field Current', iField, 'A', { symbolLatex: 'I_f', decimals: 2 }),
-		makeAnswer('iLoadA', 'Load Current', iLoad, 'A', {
-			symbolLatex: 'I_L',
-			decimals: 2,
-			highlight: input.solveFor === 'load-from-emf'
-		}),
 		makeAnswer('eaV', 'Generated EMF', ea, 'V', {
 			symbolLatex: 'E_a',
 			decimals: 2,
-			highlight: input.solveFor === 'emf-from-load'
+			highlight: input.solveFor === 'emf-from-load',
+			group: 'voltages'
+		}),
+		makeAnswer('vrPercent', 'Voltage Regulation', vrPercent, '%', {
+			symbolLatex: '\\%VR',
+			decimals: 2,
+			group: 'voltages'
+		}),
+		makeAnswer('iLoadA', 'Load Current', iLoad, 'A', {
+			symbolLatex: 'I_L',
+			decimals: 2,
+			highlight: input.solveFor === 'load-from-emf',
+			group: 'currents'
+		}),
+		makeAnswer('iaA', 'Armature Current', iArm, 'A', {
+			symbolLatex: 'I_a',
+			decimals: 2,
+			group: 'currents'
+		}),
+		makeAnswer('ifA', 'Field Current', iField, 'A', {
+			symbolLatex: 'I_f',
+			decimals: 2,
+			group: 'currents'
 		}),
 		makeAnswer('pOutW', 'Output Power', pOutW, 'W', {
 			symbolLatex: 'P_{\\text{out}}',
 			decimals: 2,
+			highlight: true,
+			group: 'power',
 			formatted: `${fmt(pOutW / 1000, 3)} kW`
 		}),
-		makeAnswer('vrPercent', 'Voltage Regulation', vrPercent, '%', { symbolLatex: '\\%VR', decimals: 2 })
+		makeAnswer('pDevW', 'Developed Power', pDevW, 'W', {
+			symbolLatex: 'P_d',
+			decimals: 2,
+			group: 'power',
+			formatted: `${fmt(pDevW / 1000, 3)} kW`
+		}),
+		makeAnswer('pCuArmW', 'Armature Copper Loss', pCuArmW, 'W', {
+			symbolLatex: 'P_{cu,a}',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('pCuFieldW', 'Field Copper Loss', pCuFieldW, 'W', {
+			symbolLatex: 'P_{cu,f}',
+			decimals: 2,
+			group: 'power'
+		}),
+		makeAnswer('efficiencyPercent', 'Efficiency', efficiencyPercent, '%', {
+			symbolLatex: '\\eta',
+			decimals: 2,
+			group: 'power'
+		})
 	);
 
 	if (isFinitePos(input.speed1Rpm) && isFinitePos(input.speed2Rpm)) {
@@ -318,7 +395,11 @@ export function solveDcGenerator(input: DcGeneratorInput): MachineSolveResult {
 			resultLatex: `E_{a2} = ${fmt(eaScaled, 2)}\\text{ V}`
 		});
 		answers.push(
-			makeAnswer('eaScaledV', 'Scaled Generated EMF', eaScaled, 'V', { symbolLatex: 'E_{a2}', decimals: 2 })
+			makeAnswer('eaScaledV', 'Scaled Generated EMF', eaScaled, 'V', {
+				symbolLatex: 'E_{a2}',
+				decimals: 2,
+				group: 'voltages'
+			})
 		);
 	}
 
@@ -375,14 +456,48 @@ export function solveDcMotor(input: DcMotorInput): MachineSolveResult {
 	];
 
 	const answers: MachineAnswerItem[] = [
-		makeAnswer('ia1A', 'Base Armature Current', ia1, 'A', { symbolLatex: 'I_{a1}', decimals: 3 }),
-		makeAnswer('ea1V', 'Base Back EMF', ea1, 'V', { symbolLatex: 'E_{a1}', decimals: 3 }),
+		makeAnswer('ea1V', 'Base Back EMF', ea1, 'V', {
+			symbolLatex: 'E_{a1}',
+			decimals: 3,
+			group: 'voltages'
+		}),
+		makeAnswer('ia1A', 'Base Armature Current', ia1, 'A', {
+			symbolLatex: 'I_{a1}',
+			decimals: 3,
+			group: 'currents'
+		}),
+		makeAnswer('omega1RadS', 'Base Angular Speed', omega1, 'rad/s', {
+			symbolLatex: '\\omega_{m1}',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('td1Nm', 'Base Developed Torque', td1, 'N·m', {
+			symbolLatex: 'T_{d1}',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('pd1W', 'Base Developed Power', pd1, 'W', {
+			symbolLatex: 'P_{d1}',
+			decimals: 2,
+			group: 'power'
+		}),
 		makeAnswer('ke', 'EMF / Torque Constant', ke, 'V·s/rad', {
 			symbolLatex: 'K_e',
 			decimals: 4,
-			highlight: true
+			highlight: true,
+			group: 'general'
 		})
 	];
+
+	if (input.motorType === 'shunt' && if1 > 0) {
+		answers.push(
+			makeAnswer('if1A', 'Shunt Field Current', if1, 'A', {
+				symbolLatex: 'I_f',
+				decimals: 3,
+				group: 'currents'
+			})
+		);
+	}
 
 	const values: Record<string, number> = {
 		ia1A: ia1,
@@ -410,7 +525,8 @@ export function solveDcMotor(input: DcMotorInput): MachineSolveResult {
 			makeAnswer('rStartOhm', 'Required Starting Resistance', rStart, 'Ω', {
 				symbolLatex: 'R_{\\text{start}}',
 				decimals: 4,
-				highlight: true
+				highlight: true,
+				group: 'impedance'
 			})
 		);
 		return { valid: true, questionType: 'QT-DC-3', title: TITLE_DC3, answers, values, steps };
@@ -465,14 +581,37 @@ export function solveDcMotor(input: DcMotorInput): MachineSolveResult {
 	});
 
 	answers.push(
-		makeAnswer('ia2A', 'New Armature Current', ia2, 'A', { symbolLatex: 'I_{a2}', decimals: 3 }),
-		makeAnswer('ea2V', 'New Back EMF', ea2, 'V', { symbolLatex: 'E_{a2}', decimals: 3 }),
+		makeAnswer('ea2V', 'New Back EMF', ea2, 'V', {
+			symbolLatex: 'E_{a2}',
+			decimals: 3,
+			group: 'voltages'
+		}),
+		makeAnswer('ia2A', 'New Armature Current', ia2, 'A', {
+			symbolLatex: 'I_{a2}',
+			decimals: 3,
+			group: 'currents'
+		}),
 		makeAnswer('n2Rpm', 'New Speed', n2Rpm, 'rpm', {
 			symbolLatex: 'n_2',
 			decimals: 2,
-			highlight: true
+			highlight: true,
+			group: 'mechanical'
 		}),
-		makeAnswer('td2Nm', 'New Developed Torque', td2, 'N·m', { symbolLatex: 'T_{d2}', decimals: 3 })
+		makeAnswer('omega2RadS', 'New Angular Speed', omega2, 'rad/s', {
+			symbolLatex: '\\omega_{m2}',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('td2Nm', 'New Developed Torque', td2, 'N·m', {
+			symbolLatex: 'T_{d2}',
+			decimals: 3,
+			group: 'mechanical'
+		}),
+		makeAnswer('pd2W', 'New Developed Power', pd2, 'W', {
+			symbolLatex: 'P_{d2}',
+			decimals: 2,
+			group: 'power'
+		})
 	);
 
 	Object.assign(values, {
