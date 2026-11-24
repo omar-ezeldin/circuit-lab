@@ -37,6 +37,7 @@
 		SchematicCanvas
 	} from '$lib/components/editor';
 	import { ResultsPanel, formatFrequency } from '$lib/components/results';
+	import { MachinesWorkbench } from '$lib/components/machines';
 	import {
 		Badge,
 		Button,
@@ -61,6 +62,7 @@
 	import { settings } from '$lib/stores/settings.svelte';
 	import { cn } from '$lib/utils';
 
+	let workspaceMode = $state<'circuits' | 'machines'>('circuits');
 	let leftRailOpen = $state(true);
 	let rightRailOpen = $state(true);
 	let rightTab = $state<'results' | 'inspector'>('results');
@@ -305,35 +307,37 @@
 <svelte:window onkeydown={handleWindowKeydown} />
 
 <svelte:head>
-	<title>{`${IS_STAGING ? '[Staging] ' : ''}${circuit.document.name?.trim() ? `${circuit.document.name.trim()} — Circuit Lab` : 'Circuit Lab'}`}</title>
+	<title>{`${IS_STAGING ? '[Staging] ' : ''}${workspaceMode === 'machines' ? 'Electrical Machines — Circuit Lab' : circuit.document.name?.trim() ? `${circuit.document.name.trim()} — Circuit Lab` : 'Circuit Lab'}`}</title>
 </svelte:head>
 
 <div class="flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground">
 	<!-- Top Toolbar -->
-	<header class="flex h-12 shrink-0 items-center justify-between gap-1 border-b border-border bg-surface-rail px-2 sm:gap-2 sm:px-3 lg:h-11">
-		<!-- Left: Rail Toggle, Brand, Mode & Telemetry -->
-		<div class="flex min-w-0 items-center gap-1 sm:gap-2">
-			<Tooltip
-				content={leftRailOpen ? 'Collapse component palette' : 'Expand component palette'}
-				side="bottom"
-				class="hidden lg:inline-flex"
-			>
-				<Button
-					variant="ghost"
-					size="icon"
-					class="h-7 w-7"
-					aria-label={leftRailOpen ? 'Collapse component palette' : 'Expand component palette'}
-					onclick={() => (leftRailOpen = !leftRailOpen)}
+	<header class="flex h-12 shrink-0 items-center justify-between gap-1 border-b border-border bg-surface-rail px-2 sm:gap-1.5 sm:px-3 lg:h-11 lg:gap-2">
+		<!-- Left: Rail Toggle, Brand, Workspace Switcher, Mode & Telemetry -->
+		<div class="flex min-w-0 items-center gap-1 sm:gap-1.5 lg:gap-2">
+			{#if workspaceMode === 'circuits'}
+				<Tooltip
+					content={leftRailOpen ? 'Collapse component palette' : 'Expand component palette'}
+					side="bottom"
+					class="hidden lg:inline-flex"
 				>
-					{#if leftRailOpen}
-						<PanelLeftClose />
-					{:else}
-						<PanelLeftOpen />
-					{/if}
-				</Button>
-			</Tooltip>
+					<Button
+						variant="ghost"
+						size="icon"
+						class="h-7 w-7"
+						aria-label={leftRailOpen ? 'Collapse component palette' : 'Expand component palette'}
+						onclick={() => (leftRailOpen = !leftRailOpen)}
+					>
+						{#if leftRailOpen}
+							<PanelLeftClose />
+						{:else}
+							<PanelLeftOpen />
+						{/if}
+					</Button>
+				</Tooltip>
+			{/if}
 
-			<div class="flex shrink-0 items-center gap-1 sm:gap-2 xl:min-w-0">
+			<div class="flex shrink-0 items-center gap-1 sm:gap-1.5 lg:gap-2 xl:min-w-0">
 				<svg
 					width="18"
 					height="18"
@@ -356,233 +360,297 @@
 				{#if IS_STAGING}
 					<span
 						title={DEPLOY_COMMIT_SHA ? `Staging deployment (${DEPLOY_COMMIT_SHA})` : 'Staging deployment'}
-						class="shrink-0 rounded-[3px] border border-warning/45 bg-warning/10 px-1 py-0.5 font-engineering text-[9px] font-semibold uppercase tracking-wide text-warning sm:px-1.5 sm:text-[10px]"
+						class="shrink-0 rounded-[3px] border border-warning/45 bg-warning/10 px-1 py-0.5 font-engineering text-[9px] font-semibold uppercase tracking-wide text-warning lg:px-1.5 lg:text-[10px]"
 					>
-						<span class="sm:hidden">STG</span><span class="hidden sm:inline">STAGING</span>
+						<span class="lg:hidden">STG</span><span class="hidden lg:inline">STAGING</span>
 					</span>
 				{/if}
-				<div class="hidden min-w-0 items-center gap-0.5 xl:flex">
-					<span aria-hidden="true" class="text-xs text-muted-foreground/70">/</span>
-					<EditableTitle
-						value={circuit.document.name ?? ''}
-						onCommit={(next) => circuit.setDocumentName(next)}
-					/>
-				</div>
+				{#if workspaceMode === 'circuits'}
+					<div class="hidden min-w-0 items-center gap-0.5 xl:flex">
+						<span aria-hidden="true" class="text-xs text-muted-foreground/70">/</span>
+						<EditableTitle
+							value={circuit.document.name ?? ''}
+							onCommit={(next) => circuit.setDocumentName(next)}
+						/>
+					</div>
+				{/if}
 			</div>
 
-			<!-- Compact Live Status Dot (< sm, hidden in AC mode where mobile canvas telemetry strip shows status) -->
-			{#if circuit.document.mode !== 'ac'}
-				<span
-					role="status"
-					aria-label={statusInfo.label}
-					title={statusInfo.label}
-					class={cn('h-2 w-2 shrink-0 rounded-full sm:hidden', statusInfo.dotClass)}
-				></span>
-			{/if}
+			<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
 
-			<Separator orientation="vertical" class="mx-1 hidden h-4 sm:block" />
-
-			<!-- DC / AC Segmented Mode Control -->
+			<!-- Top-Level Workspace Switcher: Circuits | Machines (sm+; mobile uses slim bar below header) -->
 			<div
 				role="radiogroup"
-				aria-label="Analysis mode"
-				class="inline-flex h-8 shrink-0 items-center rounded-[4px] border border-border bg-muted/80 p-0.5 lg:h-7"
+				aria-label="Workspace mode"
+				class="hidden h-8 shrink-0 items-center rounded-[4px] border border-border bg-muted/80 p-0.5 sm:inline-flex lg:h-7"
 			>
 				<button
 					type="button"
 					role="radio"
-					aria-checked={circuit.document.mode === 'dc'}
-					onclick={() => circuit.setMode('dc')}
+					aria-checked={workspaceMode === 'circuits'}
+					onclick={() => (workspaceMode = 'circuits')}
 					class={cn(
-						'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 sm:px-2.5 lg:after:hidden',
+						'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
 						'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-						circuit.document.mode === 'dc'
+						workspaceMode === 'circuits'
 							? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
 							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 					)}
 				>
-					DC
+					Circuits
 				</button>
 				<button
 					type="button"
 					role="radio"
-					aria-checked={circuit.document.mode === 'ac'}
-					disabled={!AC_ENABLED}
-					aria-disabled={!AC_ENABLED ? 'true' : undefined}
-					title={!AC_ENABLED ? 'AC Phasor Analysis — Coming Soon' : undefined}
-					aria-label={!AC_ENABLED ? 'AC mode coming soon' : undefined}
+					aria-checked={workspaceMode === 'machines'}
 					onclick={() => {
-						if (!AC_ENABLED) return;
-						circuit.setMode('ac');
+						workspaceMode = 'machines';
+						mobileMenuOpen = false;
+						freqPopoverOpen = false;
 					}}
 					class={cn(
-						'relative inline-flex h-full items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 sm:px-2.5 lg:after:hidden',
+						'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
 						'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-						!AC_ENABLED
-							? 'cursor-not-allowed border-transparent font-medium text-muted-foreground opacity-60'
-							: circuit.document.mode === 'ac'
-								? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground shadow-2xs'
-								: 'cursor-pointer border-transparent font-medium text-muted-foreground hover:text-foreground'
+						workspaceMode === 'machines'
+							? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 					)}
 				>
-					<span>AC</span>
-					{#if !AC_ENABLED}
-						<span class="hidden sm:inline ml-1 text-[9px] font-engineering uppercase text-muted-foreground">
-							Soon
-						</span>
-					{/if}
+					Machines
 				</button>
 			</div>
 
-			{#if circuit.document.mode === 'ac'}
-				<!-- Compact Mobile & Tablet AC Frequency Trigger (< lg) -->
-				<button
-					type="button"
-					aria-label="Edit AC frequency"
-					aria-expanded={freqPopoverOpen}
-					aria-haspopup="dialog"
-					onclick={() => {
-						mobileMenuOpen = false;
-						freqPopoverOpen = !freqPopoverOpen;
-					}}
-					class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-input bg-card px-1.5 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
-				>
-					<span class="sm:hidden">{formatFrequency(circuit.document.frequencyHz).replace(/\s+/g, '')}</span>
-					<span class="hidden sm:inline">{formatFrequency(circuit.document.frequencyHz)}</span>
-					<ChevronDown class="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-				</button>
-
-				<!-- Inline AC Frequency Input (lg+) -->
-				<div class="relative hidden items-center lg:flex">
-					<Input
-						type="number"
-						inputmode="decimal"
-						min="0.001"
-						step="any"
-						tabular
-						aria-label="AC frequency in Hertz"
-						bind:value={freqDraft}
-						onblur={commitToolbarFrequency}
-						onkeydown={(e) => {
-							if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
-						}}
-						class="h-8 w-24 pr-7 text-sm lg:h-7 lg:w-24 lg:text-xs"
-					/>
-					<span class="pointer-events-none absolute right-2 font-engineering text-[11px] text-muted-foreground">
-						Hz
-					</span>
-				</div>
-			{/if}
-
-			<Separator orientation="vertical" class="mx-0.5 hidden h-4 sm:block md:hidden lg:block" />
-
-			<!-- Inline Hairline Telemetry Indicator (sm+; dot-only on md to preserve breathing room) -->
-			<span
-				role="status"
-				aria-label={statusInfo.label}
-				title={statusInfo.label}
-				class="hidden shrink-0 items-center gap-1.5 font-engineering text-[11px] sm:inline-flex"
-			>
-				<span
-					class={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusInfo.dotClass)}
-					aria-hidden="true"
-				></span>
-				{#if isEmpty}
-					<span class="text-muted-foreground md:hidden lg:inline">Empty</span>
-				{:else if errorCount > 0 || !circuit.solution.mna.valid}
-					<span class="font-medium text-destructive md:hidden lg:inline">
-						{errorCount > 0
-							? `${errorCount} ${errorCount === 1 ? 'Error' : 'Errors'}`
-							: 'Invalid'}
-					</span>
-				{:else if isVerified}
-					<span class="text-foreground md:hidden lg:inline">
-						Verified<span class="hidden text-muted-foreground lg:inline">{' · ΣP = 0'}</span>
-					</span>
-				{:else}
-					<span class="text-foreground md:hidden lg:inline">Solved (MNA)</span>
+			{#if workspaceMode === 'circuits'}
+				<!-- Compact Live Status Dot (< sm, hidden in AC mode where mobile canvas telemetry strip shows status) -->
+				{#if circuit.document.mode !== 'ac'}
+					<span
+						role="status"
+						aria-label={statusInfo.label}
+						title={statusInfo.label}
+						class={cn('h-2 w-2 shrink-0 rounded-full sm:hidden', statusInfo.dotClass)}
+					></span>
 				{/if}
-			</span>
+
+				<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
+
+				<!-- DC / AC Segmented Mode Control -->
+				<div
+					role="radiogroup"
+					aria-label="Analysis mode"
+					class="inline-flex h-8 shrink-0 items-center rounded-[4px] border border-border bg-muted/80 p-0.5 lg:h-7"
+				>
+					<button
+						type="button"
+						role="radio"
+						aria-checked={circuit.document.mode === 'dc'}
+						onclick={() => circuit.setMode('dc')}
+						class={cn(
+							'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-1.5 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+							circuit.document.mode === 'dc'
+								? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+								: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
+						)}
+					>
+						DC
+					</button>
+					<button
+						type="button"
+						role="radio"
+						aria-checked={circuit.document.mode === 'ac'}
+						disabled={!AC_ENABLED}
+						aria-disabled={!AC_ENABLED ? 'true' : undefined}
+						title={!AC_ENABLED ? 'AC Phasor Analysis — Coming Soon' : undefined}
+						aria-label={!AC_ENABLED ? 'AC mode coming soon' : undefined}
+						onclick={() => {
+							if (!AC_ENABLED) return;
+							circuit.setMode('ac');
+						}}
+						class={cn(
+							'relative inline-flex h-full items-center justify-center rounded-[3px] border px-1.5 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+							!AC_ENABLED
+								? 'cursor-not-allowed border-transparent font-medium text-muted-foreground opacity-60'
+								: circuit.document.mode === 'ac'
+									? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+									: 'cursor-pointer border-transparent font-medium text-muted-foreground hover:text-foreground'
+						)}
+					>
+						<span>AC</span>
+						{#if !AC_ENABLED}
+							<span class="hidden sm:inline ml-1 text-[9px] font-engineering uppercase text-muted-foreground">
+								Soon
+							</span>
+						{/if}
+					</button>
+				</div>
+
+				{#if circuit.document.mode === 'ac'}
+					<!-- Compact Mobile & Tablet AC Frequency Trigger (< lg) -->
+					<button
+						type="button"
+						aria-label="Edit AC frequency"
+						aria-expanded={freqPopoverOpen}
+						aria-haspopup="dialog"
+						onclick={() => {
+							mobileMenuOpen = false;
+							freqPopoverOpen = !freqPopoverOpen;
+						}}
+						class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-input bg-card px-1.5 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
+					>
+						<span class="md:hidden">{formatFrequency(circuit.document.frequencyHz).replace(/\s+/g, '')}</span>
+						<span class="hidden md:inline">{formatFrequency(circuit.document.frequencyHz)}</span>
+						<ChevronDown class="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+					</button>
+
+					<!-- Inline AC Frequency Input (lg+) -->
+					<div class="relative hidden items-center lg:flex">
+						<Input
+							type="number"
+							inputmode="decimal"
+							min="0.001"
+							step="any"
+							tabular
+							aria-label="AC frequency in Hertz"
+							bind:value={freqDraft}
+							onblur={commitToolbarFrequency}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
+							}}
+							class="h-8 w-24 pr-7 text-sm lg:h-7 lg:w-24 lg:text-xs"
+						/>
+						<span class="pointer-events-none absolute right-2 font-engineering text-[11px] text-muted-foreground">
+							Hz
+						</span>
+					</div>
+				{/if}
+
+				<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
+
+				<!-- Inline Hairline Telemetry Indicator (sm+; dot-only on md to preserve breathing room) -->
+				<span
+					role="status"
+					aria-label={statusInfo.label}
+					title={statusInfo.label}
+					class="hidden shrink-0 items-center gap-1.5 font-engineering text-[11px] sm:inline-flex"
+				>
+					<span
+						class={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusInfo.dotClass)}
+						aria-hidden="true"
+					></span>
+					{#if isEmpty}
+						<span class="text-muted-foreground md:hidden lg:inline">Empty</span>
+					{:else if errorCount > 0 || !circuit.solution.mna.valid}
+						<span class="font-medium text-destructive md:hidden lg:inline">
+							{errorCount > 0
+								? `${errorCount} ${errorCount === 1 ? 'Error' : 'Errors'}`
+								: 'Invalid'}
+						</span>
+					{:else if isVerified}
+						<span class="text-foreground md:hidden lg:inline">
+							Verified<span class="hidden text-muted-foreground lg:inline">{' · ΣP = 0'}</span>
+						</span>
+					{:else}
+						<span class="text-foreground md:hidden lg:inline">Solved (MNA)</span>
+					{/if}
+				</span>
+			{/if}
 		</div>
 
 		<!-- Right: Dialog Launchers, Theme Toggle, Overflow Menu & Inspector Toggle -->
 		<div class="flex shrink-0 items-center gap-0.5 sm:gap-1">
-			<div class="hidden items-center gap-0.5 md:flex">
-				<Tooltip
-					content={AC_ENABLED
-						? 'Browse curated DC & AC circuit presets'
-						: 'Browse curated DC circuit presets'}
-					side="bottom"
-				>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="relative h-9 px-2 text-xs font-medium text-foreground/85 after:absolute after:-inset-y-1 after:inset-x-0 hover:bg-accent hover:text-foreground lg:h-7 lg:after:hidden"
-						onclick={() => (presetsOpen = true)}
+			{#if workspaceMode === 'circuits'}
+				<div class="hidden items-center gap-0.5 md:flex">
+					<Tooltip
+						content={AC_ENABLED
+							? 'Browse curated DC & AC circuit presets'
+							: 'Browse curated DC circuit presets'}
+						side="bottom"
 					>
-						<BookOpen />
-						<span>Presets</span>
-					</Button>
-				</Tooltip>
-				<Tooltip content="Import or export Circuit Lab JSON" side="bottom">
-					<Button
-						variant="ghost"
-						size="sm"
-						class="relative h-9 px-2 text-xs font-medium text-foreground/85 after:absolute after:-inset-y-1 after:inset-x-0 hover:bg-accent hover:text-foreground lg:h-7 lg:after:hidden"
-						onclick={() => (jsonOpen = true)}
+						<Button
+							variant="ghost"
+							size="sm"
+							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							aria-label="Browse circuit presets"
+							onclick={() => (presetsOpen = true)}
+						>
+							<BookOpen />
+							<span class="hidden lg:inline">Presets</span>
+						</Button>
+					</Tooltip>
+					<Tooltip content="Import or export Circuit Lab JSON" side="bottom">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							aria-label="Import or export Circuit Lab JSON"
+							onclick={() => (jsonOpen = true)}
+						>
+							<FileCode2 />
+							<span class="hidden lg:inline">JSON</span>
+						</Button>
+					</Tooltip>
+					<Tooltip content="Convert circuit image or textbook netlist via AI" side="bottom">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							aria-label="AI Import"
+							onclick={() => (aiOpen = true)}
+						>
+							<ScanLine />
+							<span class="hidden lg:inline">AI Import</span>
+						</Button>
+					</Tooltip>
+					<Tooltip
+						content="Copy shareable link (includes circuit, units & unknown problem)"
+						side="bottom"
 					>
-						<FileCode2 />
-						<span>JSON</span>
-					</Button>
-				</Tooltip>
-				<Tooltip content="Convert circuit image or textbook netlist via AI" side="bottom">
-					<Button
-						variant="ghost"
-						size="sm"
-						class="relative h-9 px-2 text-xs font-medium text-foreground/85 after:absolute after:-inset-y-1 after:inset-x-0 hover:bg-accent hover:text-foreground lg:h-7 lg:after:hidden"
-						onclick={() => (aiOpen = true)}
-					>
-						<ScanLine />
-						<span class="hidden lg:inline">AI Import</span>
-						<span class="lg:hidden">AI</span>
-					</Button>
-				</Tooltip>
-				<Tooltip
-					content="Copy shareable link (includes circuit, units & unknown problem)"
-					side="bottom"
-				>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="relative h-9 px-2 text-xs font-medium text-foreground/85 after:absolute after:-inset-y-1 after:inset-x-0 hover:bg-accent hover:text-foreground lg:h-7 lg:after:hidden"
-						aria-label="Copy shareable circuit link"
-						onclick={handleCopyShareLink}
-					>
-						{#if linkCopied}
-							<Check class="text-success" />
-							<span>Copied</span>
-						{:else}
-							<Link2 />
-							<span class="hidden xl:inline">Copy Link</span>
-							<span class="xl:hidden">Link</span>
-						{/if}
-					</Button>
-				</Tooltip>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="relative h-9 w-9 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
+							aria-label="Copy shareable circuit link"
+							onclick={handleCopyShareLink}
+						>
+							{#if linkCopied}
+								<Check class="text-success" />
+								<span class="hidden lg:inline">Copied</span>
+							{:else}
+								<Link2 />
+								<span class="hidden xl:inline">Copy Link</span>
+								<span class="hidden lg:inline xl:hidden">Link</span>
+							{/if}
+						</Button>
+					</Tooltip>
 
-				<Separator orientation="vertical" class="mx-1 h-4" />
+					<Separator orientation="vertical" class="mx-0.5 h-4 lg:mx-1" />
 
+					<Tooltip content="Workbench preferences & IEEE/IEC standard" side="bottom">
+						<Button
+							variant="ghost"
+							size="icon"
+							class="relative h-9 w-9 after:absolute after:-inset-1 lg:h-7 lg:w-7 lg:after:hidden"
+							aria-label="Workbench settings"
+							onclick={() => (settingsOpen = true)}
+						>
+							<Settings />
+						</Button>
+					</Tooltip>
+				</div>
+			{:else}
 				<Tooltip content="Workbench preferences & IEEE/IEC standard" side="bottom">
 					<Button
 						variant="ghost"
 						size="icon"
-						class="relative h-9 w-9 after:absolute after:-inset-1 lg:h-7 lg:w-7 lg:after:hidden"
+						class="relative h-9 w-9 after:absolute after:-inset-1 sm:h-10 sm:w-10 md:h-9 md:w-9 lg:h-7 lg:w-7 lg:after:hidden"
 						aria-label="Workbench settings"
 						onclick={() => (settingsOpen = true)}
 					>
 						<Settings />
 					</Button>
 				</Tooltip>
-			</div>
+			{/if}
 
 			<Tooltip content={isDark ? 'Switch to light mode' : 'Switch to dark mode'} side="bottom">
 				<Button
@@ -600,45 +668,91 @@
 				</Button>
 			</Tooltip>
 
-			<!-- Mobile Overflow Actions Trigger (< md) -->
-			<Button
-				variant="ghost"
-				size="icon"
-				class="relative h-9 w-9 after:absolute after:-inset-1 sm:h-10 sm:w-10 md:hidden"
-				aria-label="More actions"
-				aria-haspopup="menu"
-				aria-expanded={mobileMenuOpen}
-				onclick={() => {
-					freqPopoverOpen = false;
-					mobileMenuOpen = !mobileMenuOpen;
-				}}
-			>
-				<MoreVertical />
-			</Button>
-
-			<Tooltip
-				content={rightRailOpen ? 'Collapse results & inspector' : 'Expand results & inspector'}
-				side="bottom"
-				class="hidden lg:inline-flex"
-			>
+			{#if workspaceMode === 'circuits'}
+				<!-- Mobile Overflow Actions Trigger (< md) -->
 				<Button
 					variant="ghost"
 					size="icon"
-					class="h-7 w-7"
-					aria-label={rightRailOpen
-						? 'Collapse results and inspector'
-						: 'Expand results and inspector'}
-					onclick={() => (rightRailOpen = !rightRailOpen)}
+					class="relative h-9 w-9 after:absolute after:-inset-1 sm:h-10 sm:w-10 md:hidden"
+					aria-label="More actions"
+					aria-haspopup="menu"
+					aria-expanded={mobileMenuOpen}
+					onclick={() => {
+						freqPopoverOpen = false;
+						mobileMenuOpen = !mobileMenuOpen;
+					}}
 				>
-					{#if rightRailOpen}
-						<PanelRightClose />
-					{:else}
-						<PanelRightOpen />
-					{/if}
+					<MoreVertical />
 				</Button>
-			</Tooltip>
+
+				<Tooltip
+					content={rightRailOpen ? 'Collapse results & inspector' : 'Expand results & inspector'}
+					side="bottom"
+					class="hidden lg:inline-flex"
+				>
+					<Button
+						variant="ghost"
+						size="icon"
+						class="h-7 w-7"
+						aria-label={rightRailOpen
+							? 'Collapse results and inspector'
+							: 'Expand results and inspector'}
+						onclick={() => (rightRailOpen = !rightRailOpen)}
+					>
+						{#if rightRailOpen}
+							<PanelRightClose />
+						{:else}
+							<PanelRightOpen />
+						{/if}
+					</Button>
+				</Tooltip>
+			{/if}
 		</div>
 	</header>
+
+	<!-- Mobile Workspace Switcher Bar (< sm) — preserves 360px header budget in AC mode -->
+	<div
+		role="radiogroup"
+		aria-label="Workspace mode"
+		class="grid shrink-0 grid-cols-2 gap-1 border-b border-border bg-surface-rail px-2 py-1.5 sm:hidden"
+	>
+		<button
+			type="button"
+			role="radio"
+			aria-checked={workspaceMode === 'circuits'}
+			onclick={() => (workspaceMode = 'circuits')}
+			class={cn(
+				'inline-flex min-h-11 cursor-pointer items-center justify-center rounded-[4px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+				workspaceMode === 'circuits'
+					? 'border-border/90 bg-card font-semibold text-foreground'
+					: 'border-transparent bg-muted/70 font-medium text-muted-foreground hover:text-foreground'
+			)}
+		>
+			Circuits
+		</button>
+		<button
+			type="button"
+			role="radio"
+			aria-checked={workspaceMode === 'machines'}
+			onclick={() => {
+				workspaceMode = 'machines';
+				mobileMenuOpen = false;
+				freqPopoverOpen = false;
+			}}
+			class={cn(
+				'inline-flex min-h-11 cursor-pointer items-center justify-center rounded-[4px] border px-3 text-xs transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+				workspaceMode === 'machines'
+					? 'border-border/90 bg-card font-semibold text-foreground'
+					: 'border-transparent bg-muted/70 font-medium text-muted-foreground hover:text-foreground'
+			)}
+		>
+			Machines
+		</button>
+	</div>
+
+	{#if workspaceMode === 'machines'}
+		<MachinesWorkbench />
+	{:else}
 
 	{#if acComingSoonNotice}
 		<div
@@ -1146,6 +1260,7 @@
 			</span>
 		</button>
 	</nav>
+	{/if}
 </div>
 
 <!-- Mobile Component Palette Sheet -->
