@@ -19,9 +19,9 @@
 		PanelLeftOpen,
 		PanelRightClose,
 		PanelRightOpen,
-		ScanLine,
 		Settings,
 		SlidersHorizontal,
+		Sparkles,
 		Sun,
 		X
 	} from 'lucide-svelte';
@@ -76,7 +76,7 @@
 	let rightTab = $state<'results' | 'inspector'>('results');
 	let mobileTab = $state<'canvas' | 'results' | 'inspector'>('canvas');
 	let paletteSheetOpen = $state(false);
-	let mobileMenuOpen = $state(false);
+	let moreMenuOpen = $state(false);
 	let freqPopoverOpen = $state(false);
 	let workspaceMenuOpen = $state(false);
 
@@ -91,7 +91,7 @@
 	let autoWireFeedback = $state<string | null>(null);
 
 	let linkCopiedTimer: ReturnType<typeof setTimeout> | undefined;
-	let mobileMenuCloseTimer: ReturnType<typeof setTimeout> | undefined;
+	let moreMenuCloseTimer: ReturnType<typeof setTimeout> | undefined;
 	let autoWireFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
 	let lastWrittenHash = '';
 
@@ -118,39 +118,6 @@
 	const errorCount = $derived(
 		circuit.solution.mna.diagnostics.filter((d) => d.severity === 'error').length
 	);
-	const isVerified = $derived(
-		circuit.solution.mna.valid &&
-			circuit.solution.allVerified &&
-			circuit.solution.mna.powerBalance.balanced
-	);
-
-	const statusInfo = $derived.by(() => {
-		if (isEmpty) {
-			return {
-				dotClass: 'bg-muted-foreground/50',
-				label: 'Circuit is empty'
-			};
-		}
-		if (errorCount > 0 || !circuit.solution.mna.valid) {
-			return {
-				dotClass: 'bg-destructive',
-				label:
-					errorCount > 0
-						? `${errorCount} ${errorCount === 1 ? 'error' : 'errors'} in circuit`
-						: 'Circuit invalid'
-			};
-		}
-		if (isVerified) {
-			return {
-				dotClass: 'bg-branch-current',
-				label: 'Verified · Power balanced (ΣP = 0)'
-			};
-		}
-		return {
-			dotClass: 'bg-warning',
-			label: 'Solved (MNA)'
-		};
-	});
 
 	function commitToolbarFrequency() {
 		const trimmed = String(freqDraft ?? '').trim();
@@ -164,7 +131,7 @@
 
 	function handleWindowKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
-			if (mobileMenuOpen) mobileMenuOpen = false;
+			if (moreMenuOpen) moreMenuOpen = false;
 			if (freqPopoverOpen) freqPopoverOpen = false;
 			if (workspaceMenuOpen) workspaceMenuOpen = false;
 		}
@@ -316,8 +283,8 @@
 			if (linkCopiedTimer !== undefined) {
 				clearTimeout(linkCopiedTimer);
 			}
-			if (mobileMenuCloseTimer !== undefined) {
-				clearTimeout(mobileMenuCloseTimer);
+			if (moreMenuCloseTimer !== undefined) {
+				clearTimeout(moreMenuCloseTimer);
 			}
 			if (autoWireFeedbackTimer !== undefined) {
 				clearTimeout(autoWireFeedbackTimer);
@@ -334,9 +301,9 @@
 
 <div class="relative flex h-dvh w-full flex-col overflow-hidden bg-background text-foreground">
 	<!-- Top Toolbar -->
-	<header class="flex h-12 shrink-0 items-center justify-between gap-1 border-b border-border bg-surface-rail px-2 sm:gap-1.5 sm:px-3 lg:h-11 lg:gap-2">
-		<!-- Left: Rail Toggle, Brand, Workspace Switcher, Mode & Telemetry -->
-		<div class="flex min-w-0 items-center gap-1 sm:gap-1.5 lg:gap-2">
+	<header class="flex h-12 shrink-0 items-center justify-between gap-1 border-b border-border bg-surface-rail px-2 sm:gap-2 sm:px-3 lg:h-11">
+		<!-- Left: Rail Toggle, Brand, Workspace Switcher & Analysis Mode -->
+		<div class="flex min-w-0 items-center gap-1 sm:gap-2">
 			{#if workspaceMode === 'circuits'}
 				<Tooltip
 					content={leftRailOpen ? 'Collapse component palette' : 'Expand component palette'}
@@ -346,7 +313,7 @@
 					<Button
 						variant="ghost"
 						size="icon"
-						class="h-7 w-7"
+						class="h-7 w-7 rounded-[4px] [&_svg]:size-3.5"
 						aria-label={leftRailOpen ? 'Collapse component palette' : 'Expand component palette'}
 						onclick={() => (leftRailOpen = !leftRailOpen)}
 					>
@@ -359,15 +326,15 @@
 				</Tooltip>
 			{/if}
 
-			<div class="flex shrink-0 items-center gap-0.5 sm:gap-1.5 lg:gap-2 xl:min-w-0">
-				<BrandMark size={20} class="size-5" />
+			<div class="flex shrink-0 items-center gap-0.5 sm:gap-1.5 xl:min-w-0">
+				<BrandMark size={20} class="size-5 shrink-0" />
 				<span class="hidden shrink-0 whitespace-nowrap text-[13px] font-semibold tracking-tight text-foreground sm:inline">
 					Circuit Lab
 				</span>
 				{#if IS_STAGING}
 					<span
 						title={DEPLOY_COMMIT_SHA ? `Staging deployment (${DEPLOY_COMMIT_SHA})` : 'Staging deployment'}
-						class="shrink-0 rounded-[3px] border border-warning/45 bg-warning/10 px-1 py-0.5 font-engineering text-[8px] font-semibold uppercase tracking-wide text-warning sm:text-[9px] lg:px-1.5 lg:text-[10px]"
+						class="shrink-0 rounded-[3px] border border-warning/45 bg-warning/10 px-1 py-0.5 font-engineering text-[9px] font-semibold uppercase tracking-wide text-warning lg:px-1.5 lg:text-[10px]"
 					>
 						<span class="lg:hidden">STG</span><span class="hidden lg:inline">STAGING</span>
 					</span>
@@ -383,18 +350,20 @@
 				{/if}
 			</div>
 
-			<!-- Compact Mobile Workspace Switcher (< sm) right inside the single 48px header -->
+			<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
+
+			<!-- Compact Mobile Workspace Switcher (< sm) -->
 			<button
 				type="button"
 				aria-label="Switch workspace mode"
 				aria-haspopup="menu"
 				aria-expanded={workspaceMenuOpen}
 				onclick={() => {
-					mobileMenuOpen = false;
+					moreMenuOpen = false;
 					freqPopoverOpen = false;
 					workspaceMenuOpen = !workspaceMenuOpen;
 				}}
-				class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-border bg-card px-1.5 text-[11px] font-semibold text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:hidden"
+				class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-border bg-card px-1.5 text-[11px] font-semibold text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-1.5 after:inset-x-0 sm:hidden"
 			>
 				<span>{workspaceMode === 'machines' ? 'Machines' : 'Circuits'}</span>
 				<ChevronDown
@@ -406,8 +375,6 @@
 				/>
 			</button>
 
-			<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
-
 			<!-- Top-Level Workspace Switcher: Circuits | Machines (sm+) -->
 			<div
 				role="radiogroup"
@@ -418,12 +385,17 @@
 					type="button"
 					role="radio"
 					aria-checked={workspaceMode === 'circuits'}
-					onclick={() => (workspaceMode = 'circuits')}
+					onclick={() => {
+						workspaceMode = 'circuits';
+						moreMenuOpen = false;
+						freqPopoverOpen = false;
+						workspaceMenuOpen = false;
+					}}
 					class={cn(
-						'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+						'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-2 after:inset-x-0 lg:px-2.5 lg:after:hidden',
 						'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 						workspaceMode === 'circuits'
-							? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+							? 'border-border/80 bg-card font-semibold text-foreground'
 							: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 					)}
 				>
@@ -440,16 +412,17 @@
 					onclick={() => {
 						if (!MACHINES_ENABLED) return;
 						workspaceMode = 'machines';
-						mobileMenuOpen = false;
+						moreMenuOpen = false;
 						freqPopoverOpen = false;
+						workspaceMenuOpen = false;
 					}}
 					class={cn(
-						'relative inline-flex h-full items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 lg:px-2.5 lg:after:hidden',
+						'relative inline-flex h-full items-center justify-center rounded-[3px] border px-2 text-xs transition-colors duration-150 after:absolute after:-inset-y-2 after:inset-x-0 lg:px-2.5 lg:after:hidden',
 						'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 						!MACHINES_ENABLED
 							? 'cursor-not-allowed border-transparent font-medium text-muted-foreground opacity-60'
 							: workspaceMode === 'machines'
-								? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+								? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground'
 								: 'cursor-pointer border-transparent font-medium text-muted-foreground hover:text-foreground'
 					)}
 				>
@@ -463,17 +436,7 @@
 			</div>
 
 			{#if workspaceMode === 'circuits'}
-				<!-- Compact Live Status Dot (< sm, hidden in AC mode where mobile canvas telemetry strip shows status) -->
-				{#if circuit.document.mode !== 'ac'}
-					<span
-						role="status"
-						aria-label={statusInfo.label}
-						title={statusInfo.label}
-						class={cn('h-2 w-2 shrink-0 rounded-full sm:hidden', statusInfo.dotClass)}
-					></span>
-				{/if}
-
-				<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
+				<Separator orientation="vertical" class="mx-0.5 hidden h-4 sm:block" />
 
 				<!-- DC / AC Segmented Mode Control -->
 				<div
@@ -487,10 +450,10 @@
 						aria-checked={circuit.document.mode === 'dc'}
 						onclick={() => circuit.setMode('dc')}
 						class={cn(
-							'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-1.5 text-[11px] transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 sm:text-xs lg:px-2.5 lg:after:hidden',
+							'relative inline-flex h-full cursor-pointer items-center justify-center rounded-[3px] border px-1 text-[11px] transition-colors duration-150 after:absolute after:-inset-y-2 after:inset-x-0 min-[380px]:px-1.5 sm:px-2 sm:text-xs lg:px-2.5 lg:after:hidden',
 							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 							circuit.document.mode === 'dc'
-								? 'border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+								? 'border-border/80 bg-card font-semibold text-foreground'
 								: 'border-transparent font-medium text-muted-foreground hover:text-foreground'
 						)}
 					>
@@ -509,12 +472,12 @@
 							circuit.setMode('ac');
 						}}
 						class={cn(
-							'relative inline-flex h-full items-center justify-center rounded-[3px] border px-1.5 text-[11px] transition-colors duration-150 after:absolute after:-inset-y-3 after:inset-x-0 sm:text-xs lg:px-2.5 lg:after:hidden',
+							'relative inline-flex h-full items-center justify-center rounded-[3px] border px-1 text-[11px] transition-colors duration-150 after:absolute after:-inset-y-2 after:inset-x-0 min-[380px]:px-1.5 sm:px-2 sm:text-xs lg:px-2.5 lg:after:hidden',
 							'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 							!AC_ENABLED
 								? 'cursor-not-allowed border-transparent font-medium text-muted-foreground opacity-60'
 								: circuit.document.mode === 'ac'
-									? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground shadow-2xs'
+									? 'cursor-pointer border-border/80 bg-card font-semibold text-foreground'
 									: 'cursor-pointer border-transparent font-medium text-muted-foreground hover:text-foreground'
 						)}
 					>
@@ -535,11 +498,11 @@
 						aria-expanded={freqPopoverOpen}
 						aria-haspopup="dialog"
 						onclick={() => {
-							mobileMenuOpen = false;
+							moreMenuOpen = false;
 							workspaceMenuOpen = false;
 							freqPopoverOpen = !freqPopoverOpen;
 						}}
-						class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-input bg-card px-1 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-2 after:inset-x-0 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
+						class="relative inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-[4px] border border-border bg-card px-1 font-engineering text-[11px] text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring after:absolute after:-inset-y-1.5 after:inset-x-0 min-[380px]:px-1.5 sm:gap-1 sm:px-2 sm:text-xs lg:hidden"
 					>
 						<span class="md:hidden">{formatFrequency(circuit.document.frequencyHz).replace(/\s+/g, '')}</span>
 						<span class="hidden md:inline">{formatFrequency(circuit.document.frequencyHz)}</span>
@@ -560,130 +523,19 @@
 							onkeydown={(e) => {
 								if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur();
 							}}
-							class="h-8 w-24 pr-7 text-sm lg:h-7 lg:w-24 lg:text-xs"
+							class="h-7 w-24 rounded-[4px] border-border bg-card pr-7 text-xs shadow-none sm:h-7 sm:text-xs lg:h-7 lg:text-xs"
 						/>
 						<span class="pointer-events-none absolute right-2 font-engineering text-[11px] text-muted-foreground">
 							Hz
 						</span>
 					</div>
 				{/if}
-
-				<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
-
-				<!-- Inline Hairline Telemetry Indicator (sm+; dot-only on md to preserve breathing room) -->
-				<span
-					role="status"
-					aria-label={statusInfo.label}
-					title={statusInfo.label}
-					class="hidden shrink-0 items-center gap-1.5 font-engineering text-[11px] sm:inline-flex"
-				>
-					<span
-						class={cn('h-1.5 w-1.5 shrink-0 rounded-full', statusInfo.dotClass)}
-						aria-hidden="true"
-					></span>
-					{#if isEmpty}
-						<span class="text-muted-foreground md:hidden lg:inline">Empty</span>
-					{:else if errorCount > 0 || !circuit.solution.mna.valid}
-						<span class="font-medium text-destructive md:hidden lg:inline">
-							{errorCount > 0
-								? `${errorCount} ${errorCount === 1 ? 'Error' : 'Errors'}`
-								: 'Invalid'}
-						</span>
-					{:else if isVerified}
-						<span class="text-foreground md:hidden lg:inline">
-							Verified<span class="hidden text-muted-foreground lg:inline">{' · ΣP = 0'}</span>
-						</span>
-					{:else}
-						<span class="text-foreground md:hidden lg:inline">Solved (MNA)</span>
-					{/if}
-				</span>
 			{/if}
 		</div>
 
-		<!-- Right: Mode Actions, Unified AI Import, Theme Toggle, Overflow Menu & Inspector Toggle -->
-		<div class="flex shrink-0 items-center gap-0.5 sm:gap-1">
-			{#if workspaceMode === 'circuits'}
-				<div class="hidden items-center gap-0.5 md:flex">
-					<Tooltip
-						content={AC_ENABLED
-							? 'Browse curated DC & AC circuit presets'
-							: 'Browse curated DC circuit presets'}
-						side="bottom"
-					>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="relative h-8 w-8 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
-							aria-label="Browse circuit presets"
-							onclick={() => (presetsOpen = true)}
-						>
-							<BookOpen />
-							<span class="hidden lg:inline">Presets</span>
-						</Button>
-					</Tooltip>
-					<Tooltip content="Import or export Circuit Lab JSON" side="bottom">
-						<Button
-							variant="ghost"
-							size="sm"
-							class="relative h-8 w-8 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
-							aria-label="Import or export Circuit Lab JSON"
-							onclick={() => (jsonOpen = true)}
-						>
-							<FileCode2 />
-							<span class="hidden lg:inline">JSON</span>
-						</Button>
-					</Tooltip>
-					<Tooltip
-						content="Copy shareable link (includes circuit, units & unknown problem)"
-						side="bottom"
-					>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="relative h-8 w-8 px-0 text-xs font-medium text-foreground/85 after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground lg:h-7 lg:w-auto lg:px-2 lg:after:hidden"
-							aria-label="Copy shareable circuit link"
-							onclick={handleCopyShareLink}
-						>
-							{#if linkCopied}
-								<Check class="text-success" />
-								<span class="hidden lg:inline">Copied</span>
-							{:else}
-								<Link2 />
-								<span class="hidden xl:inline">Copy Link</span>
-								<span class="hidden lg:inline xl:hidden">Link</span>
-							{/if}
-						</Button>
-					</Tooltip>
-
-					<Separator orientation="vertical" class="mx-0.5 h-4 lg:mx-1" />
-
-					<Tooltip content="Workbench preferences & IEEE/IEC standard" side="bottom">
-						<Button
-							variant="ghost"
-							size="icon"
-							class="relative h-8 w-8 after:absolute after:-inset-1.5 lg:h-7 lg:w-7 lg:after:hidden"
-							aria-label="Workbench settings"
-							onclick={() => (settingsOpen = true)}
-						>
-							<Settings />
-						</Button>
-					</Tooltip>
-				</div>
-			{:else}
-				<Tooltip content="Workbench preferences & IEEE/IEC standard" side="bottom">
-					<Button
-						variant="ghost"
-						size="icon"
-						class="relative h-8 w-8 after:absolute after:-inset-1.5 sm:h-9 sm:w-9 md:h-8 md:w-8 lg:h-7 lg:w-7 lg:after:hidden"
-						aria-label="Workbench settings"
-						onclick={() => (settingsOpen = true)}
-					>
-						<Settings />
-					</Button>
-				</Tooltip>
-			{/if}
-
-			<!-- Unified AI Import (identical slot immediately left of Theme toggle in BOTH Circuits & Machines modes) -->
+		<!-- Right: Unified AI Import, Theme Toggle, More Actions Menu & Inspector Rail Toggle -->
+		<div class="flex shrink-0 items-center gap-1 sm:gap-1.5">
+			<!-- Slot 1: Unified AI Import (identical slot immediately left of Theme toggle in BOTH Circuits & Machines) -->
 			<Tooltip
 				content={workspaceMode === 'machines'
 					? 'Import an Electrical Machines problem via AI'
@@ -693,9 +545,12 @@
 				<Button
 					variant="outline"
 					size="sm"
-					class="relative h-8 w-7 gap-0 px-0 text-[11px] font-medium text-foreground after:absolute after:-inset-2 hover:bg-accent hover:text-foreground min-[400px]:w-auto min-[400px]:gap-1 min-[400px]:px-1.5 min-[400px]:after:-inset-y-2 min-[400px]:after:inset-x-0 sm:px-2.5 sm:text-xs lg:h-7 lg:after:hidden"
+					class="relative h-8 w-8 gap-0 rounded-[4px] border-border bg-card px-0 text-xs font-medium text-foreground after:absolute after:-inset-1.5 hover:bg-accent hover:text-foreground min-[420px]:w-auto min-[420px]:gap-1 min-[420px]:px-2 sm:gap-1.5 sm:px-2.5 lg:h-7 lg:after:hidden"
 					aria-label="AI Import"
 					onclick={() => {
+						moreMenuOpen = false;
+						freqPopoverOpen = false;
+						workspaceMenuOpen = false;
 						if (workspaceMode === 'machines') {
 							machineAiImportOpen = true;
 						} else {
@@ -703,17 +558,18 @@
 						}
 					}}
 				>
-					<ScanLine class="size-3.5 shrink-0" aria-hidden="true" />
-					<span class="hidden min-[400px]:inline sm:hidden">AI</span>
+					<Sparkles class="size-3.5 shrink-0" aria-hidden="true" />
+					<span class="hidden min-[420px]:inline sm:hidden">AI</span>
 					<span class="hidden sm:inline">AI Import</span>
 				</Button>
 			</Tooltip>
 
+			<!-- Slot 2: Theme Toggle -->
 			<Tooltip content={isDark ? 'Switch to light mode' : 'Switch to dark mode'} side="bottom">
 				<Button
 					variant="ghost"
 					size="icon"
-					class="relative h-8 w-7 after:absolute after:-inset-2 min-[400px]:w-8 min-[400px]:after:-inset-1.5 sm:h-9 sm:w-9 md:h-8 md:w-8 lg:h-7 lg:w-7 lg:after:hidden"
+					class="relative h-8 w-8 rounded-[4px] [&_svg]:size-4 after:absolute after:-inset-1.5 lg:h-7 lg:w-7 lg:[&_svg]:size-3.5 lg:after:hidden"
 					aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
 					onclick={toggleMode}
 				>
@@ -725,23 +581,28 @@
 				</Button>
 			</Tooltip>
 
-			{#if workspaceMode === 'circuits'}
-				<!-- Mobile Overflow Actions Trigger (< md) -->
+			<!-- Slot 3: Unified More Actions Menu Trigger (all viewports, both Circuits & Machines) -->
+			<Tooltip content="More actions" side="bottom">
 				<Button
 					variant="ghost"
 					size="icon"
-					class="relative h-8 w-7 after:absolute after:-inset-2 min-[400px]:w-8 min-[400px]:after:-inset-1.5 sm:h-9 sm:w-9 md:hidden"
+					class="relative h-8 w-8 rounded-[4px] [&_svg]:size-4 after:absolute after:-inset-1.5 lg:h-7 lg:w-7 lg:[&_svg]:size-3.5 lg:after:hidden"
 					aria-label="More actions"
 					aria-haspopup="menu"
-					aria-expanded={mobileMenuOpen}
+					aria-expanded={moreMenuOpen}
 					onclick={() => {
 						freqPopoverOpen = false;
 						workspaceMenuOpen = false;
-						mobileMenuOpen = !mobileMenuOpen;
+						moreMenuOpen = !moreMenuOpen;
 					}}
 				>
 					<MoreVertical />
 				</Button>
+			</Tooltip>
+
+			<!-- Slot 4: Right Rail Toggle (Circuits lg+ only) -->
+			{#if workspaceMode === 'circuits'}
+				<Separator orientation="vertical" class="mx-0.5 hidden h-4 lg:block" />
 
 				<Tooltip
 					content={rightRailOpen ? 'Collapse results & inspector' : 'Expand results & inspector'}
@@ -751,7 +612,7 @@
 					<Button
 						variant="ghost"
 						size="icon"
-						class="h-7 w-7"
+						class="h-7 w-7 rounded-[4px] [&_svg]:size-3.5"
 						aria-label={rightRailOpen
 							? 'Collapse results and inspector'
 							: 'Expand results and inspector'}
@@ -789,6 +650,8 @@
 				onclick={() => {
 					workspaceMode = 'circuits';
 					workspaceMenuOpen = false;
+					moreMenuOpen = false;
+					freqPopoverOpen = false;
 				}}
 				class={cn(
 					'flex min-h-11 w-full cursor-pointer items-center justify-between gap-2 rounded-[4px] px-3 py-2 text-left text-sm transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -816,7 +679,7 @@
 					if (!MACHINES_ENABLED) return;
 					workspaceMode = 'machines';
 					workspaceMenuOpen = false;
-					mobileMenuOpen = false;
+					moreMenuOpen = false;
 					freqPopoverOpen = false;
 				}}
 				class={cn(
@@ -840,6 +703,130 @@
 					<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />
 				{/if}
 			</button>
+		</div>
+	{/if}
+
+	<!-- Unified More / Actions Popover Menu (All Viewports, Both Circuits & Machines) -->
+	{#if moreMenuOpen}
+		<button
+			type="button"
+			tabindex="-1"
+			aria-label="Close actions menu"
+			onclick={() => (moreMenuOpen = false)}
+			class="fixed inset-0 z-40 cursor-default bg-transparent"
+		></button>
+		<div
+			role="menu"
+			aria-label="More actions"
+			class="fixed top-[52px] right-2 z-50 flex w-56 flex-col gap-0.5 rounded-[4px] border border-border bg-popover p-1.5 text-popover-foreground shadow-lg lg:top-12 lg:right-3"
+		>
+			{#if workspaceMode === 'circuits'}
+				<button
+					type="button"
+					role="menuitem"
+					onclick={() => {
+						moreMenuOpen = false;
+						presetsOpen = true;
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+				>
+					<BookOpen class="size-4 shrink-0 text-muted-foreground lg:size-3.5" aria-hidden="true" />
+					<span>Presets</span>
+				</button>
+				<button
+					type="button"
+					role="menuitem"
+					onclick={() => {
+						moreMenuOpen = false;
+						jsonOpen = true;
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+				>
+					<FileCode2 class="size-4 shrink-0 text-muted-foreground lg:size-3.5" aria-hidden="true" />
+					<span>JSON Import / Export</span>
+				</button>
+				<button
+					type="button"
+					role="menuitem"
+					onclick={async () => {
+						await handleCopyShareLink();
+						if (moreMenuCloseTimer !== undefined) {
+							clearTimeout(moreMenuCloseTimer);
+						}
+						moreMenuCloseTimer = setTimeout(() => {
+							moreMenuOpen = false;
+						}, 600);
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+				>
+					{#if linkCopied}
+						<Check class="size-4 shrink-0 text-success lg:size-3.5" aria-hidden="true" />
+						<span>Link Copied!</span>
+					{:else}
+						<Link2 class="size-4 shrink-0 text-muted-foreground lg:size-3.5" aria-hidden="true" />
+						<span>Copy Share Link</span>
+					{/if}
+				</button>
+				<Separator class="my-1" />
+			{/if}
+
+			<button
+				type="button"
+				role="menuitem"
+				onclick={() => {
+					moreMenuOpen = false;
+					settingsOpen = true;
+				}}
+				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+			>
+				<Settings class="size-4 shrink-0 text-muted-foreground lg:size-3.5" aria-hidden="true" />
+				<span>Settings</span>
+			</button>
+			{#if pwa.canInstall}
+				<button
+					type="button"
+					role="menuitem"
+					onclick={() => {
+						moreMenuOpen = false;
+						void pwa.promptInstall();
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-primary transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+				>
+					<Download class="size-4 shrink-0 lg:size-3.5" aria-hidden="true" />
+					<span>Install App</span>
+				</button>
+			{/if}
+
+			{#if workspaceMode === 'circuits'}
+				<Separator class="my-1" />
+				<button
+					type="button"
+					role="menuitem"
+					disabled={circuit.document.components.length < 2}
+					onclick={() => {
+						moreMenuOpen = false;
+						handleAutoWire();
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+				>
+					<Cable class="size-4 shrink-0 text-muted-foreground lg:size-3.5" aria-hidden="true" />
+					<span>Auto-Wire Circuit</span>
+				</button>
+				<button
+					type="button"
+					role="menuitem"
+					disabled={circuit.document.components.length === 0 && circuit.document.wires.length === 0}
+					onclick={() => {
+						circuit.clearCircuit();
+						moreMenuOpen = false;
+						mobileTab = 'canvas';
+					}}
+					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-destructive transition-colors duration-150 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 lg:min-h-8 lg:px-2.5 lg:py-1.5 lg:text-xs"
+				>
+					<Eraser class="size-4 shrink-0 lg:size-3.5" aria-hidden="true" />
+					<span>Clear Canvas</span>
+				</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -976,135 +963,6 @@
 		</div>
 	{/if}
 
-	<!-- Mobile Overflow Actions Menu (< md) -->
-	{#if mobileMenuOpen}
-		<button
-			type="button"
-			tabindex="-1"
-			aria-label="Close actions menu"
-			onclick={() => (mobileMenuOpen = false)}
-			class="fixed inset-0 z-40 cursor-default bg-transparent md:hidden"
-		></button>
-		<div
-			role="menu"
-			aria-label="More actions"
-			class="fixed top-[52px] right-2 z-50 flex w-56 flex-col gap-0.5 rounded-[4px] border border-border bg-popover p-1.5 text-popover-foreground shadow-lg md:hidden"
-		>
-			<button
-				type="button"
-				role="menuitem"
-				onclick={() => {
-					mobileMenuOpen = false;
-					presetsOpen = true;
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				<BookOpen class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-				<span>Presets</span>
-			</button>
-			<button
-				type="button"
-				role="menuitem"
-				onclick={() => {
-					mobileMenuOpen = false;
-					jsonOpen = true;
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				<FileCode2 class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-				<span>JSON Import / Export</span>
-			</button>
-			<button
-				type="button"
-				role="menuitem"
-				onclick={() => {
-					mobileMenuOpen = false;
-					aiOpen = true;
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				<ScanLine class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-				<span>AI Import</span>
-			</button>
-			<button
-				type="button"
-				role="menuitem"
-				onclick={async () => {
-					await handleCopyShareLink();
-					if (mobileMenuCloseTimer !== undefined) {
-						clearTimeout(mobileMenuCloseTimer);
-					}
-					mobileMenuCloseTimer = setTimeout(() => {
-						mobileMenuOpen = false;
-					}, 600);
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				{#if linkCopied}
-					<Check class="size-4 shrink-0 text-success" aria-hidden="true" />
-					<span>Link Copied!</span>
-				{:else}
-					<Link2 class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-					<span>Copy Share Link</span>
-				{/if}
-			</button>
-			<Separator class="my-1" />
-			<button
-				type="button"
-				role="menuitem"
-				onclick={() => {
-					mobileMenuOpen = false;
-					settingsOpen = true;
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				<Settings class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-				<span>Settings</span>
-			</button>
-			{#if pwa.canInstall}
-				<button
-					type="button"
-					role="menuitem"
-					onclick={() => {
-						mobileMenuOpen = false;
-						void pwa.promptInstall();
-					}}
-					class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-primary transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				>
-					<Download class="size-4 shrink-0" aria-hidden="true" />
-					<span>Install App</span>
-				</button>
-			{/if}
-			<Separator class="my-1" />
-			<button
-				type="button"
-				role="menuitem"
-				disabled={circuit.document.components.length < 2}
-				onclick={() => {
-					mobileMenuOpen = false;
-					handleAutoWire();
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-[4px] px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-150 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
-			>
-				<Cable class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-				<span>Auto-Wire Circuit</span>
-			</button>
-			<button
-				type="button"
-				role="menuitem"
-				disabled={circuit.document.components.length === 0 && circuit.document.wires.length === 0}
-				onclick={() => {
-					circuit.clearCircuit();
-					mobileMenuOpen = false;
-					mobileTab = 'canvas';
-				}}
-				class="flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm font-medium text-destructive transition-colors duration-150 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40"
-			>
-				<Eraser class="size-4 shrink-0" aria-hidden="true" />
-				<span>Clear Canvas</span>
-			</button>
-		</div>
-	{/if}
 
 	<!-- Main 3-Pane Responsive Workbench -->
 	<div class="flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">

@@ -8,7 +8,7 @@
 		ChevronDown,
 		Copy,
 		FlaskConical,
-		ScanLine
+		Sparkles
 	} from 'lucide-svelte';
 	import { Button, Dialog } from '$lib/components/ui';
 	import {
@@ -157,7 +157,7 @@
 			</div>
 
 			<div class="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
-				<ScanLine class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+				<Sparkles class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 				<p>
 					Paste the prompt with your exam photo or problem text in ChatGPT, Claude, or Gemini to
 					extract structured parameters.

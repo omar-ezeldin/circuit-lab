@@ -13,8 +13,8 @@
 		Redo2,
 		RotateCw,
 		Scan,
-		ScanLine,
 		SlidersHorizontal,
+		Sparkles,
 		Target,
 		Trash2,
 		Undo2,
@@ -3124,7 +3124,7 @@
 							class="min-h-11 lg:min-h-0"
 							onclick={() => onOpenAiImport?.()}
 						>
-							<ScanLine />
+							<Sparkles />
 							<span>AI Import</span>
 						</Button>
 					</div>

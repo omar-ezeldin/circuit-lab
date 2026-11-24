@@ -189,14 +189,15 @@
 					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 						{#each highlightedAnswers as answer (answer.key)}
 							<div
+								data-answer-card
 								class={cn(
-									'flex min-w-0 flex-col justify-between gap-1 rounded-[4px] border px-3 py-2',
+									'flex min-w-0 flex-col justify-between gap-1.5 overflow-hidden rounded-[4px] border px-3 py-2',
 									highlightAccentClass(answer.group)
 								)}
 							>
-								<div class="flex items-center justify-between gap-1.5">
+								<div class="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-0.5">
 									<span
-										class="truncate text-[11px] font-medium text-muted-foreground"
+										class="min-w-0 flex-1 text-[11px] font-medium leading-snug text-muted-foreground break-words"
 										title={answer.label}
 									>
 										{answer.label}
@@ -205,14 +206,14 @@
 										<MathBlock
 											latex={answer.symbolLatex}
 											display={false}
-											class="shrink-0 text-[11px] text-foreground/85"
+											class="max-w-full shrink-0 text-[11px] text-foreground/85"
 										/>
 									{/if}
 								</div>
-								<div class="flex items-baseline justify-between gap-1.5">
+								<div class="flex min-w-0 items-baseline justify-between gap-1.5">
 									<span
 										class={cn(
-											'font-engineering text-sm font-semibold tabular-nums tracking-tight break-words',
+											'min-w-0 font-engineering text-[13px] font-semibold tabular-nums tracking-tight break-words xl:text-sm',
 											valueColorClass(answer.group)
 										)}
 									>
@@ -278,11 +279,12 @@
 					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 						{#each group.items as answer (answer.key)}
 							<div
-								class="flex min-w-0 flex-col justify-between gap-1 rounded-[4px] border border-border bg-surface-rail/35 px-3 py-2"
+								data-answer-card
+								class="flex min-w-0 flex-col justify-between gap-1.5 overflow-hidden rounded-[4px] border border-border bg-surface-rail/35 px-3 py-2"
 							>
-								<div class="flex items-center justify-between gap-1.5">
+								<div class="flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-0.5">
 									<span
-										class="truncate text-[11px] font-medium text-muted-foreground"
+										class="min-w-0 flex-1 text-[11px] font-medium leading-snug text-muted-foreground break-words"
 										title={answer.label}
 									>
 										{answer.label}
@@ -291,14 +293,14 @@
 										<MathBlock
 											latex={answer.symbolLatex}
 											display={false}
-											class="shrink-0 text-[11px] text-foreground/85"
+											class="max-w-full shrink-0 text-[11px] text-foreground/85"
 										/>
 									{/if}
 								</div>
-								<div class="flex items-baseline justify-between gap-1.5">
+								<div class="flex min-w-0 items-baseline justify-between gap-1.5">
 									<span
 										class={cn(
-											'font-engineering text-xs font-semibold tabular-nums tracking-tight break-words sm:text-sm',
+											'min-w-0 font-engineering text-[13px] font-semibold tabular-nums tracking-tight break-words xl:text-sm',
 											valueColorClass(answer.group)
 										)}
 									>

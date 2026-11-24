@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import {
 	FinalAnswersCard,
+	MathBlock,
 	PhasorDiagram,
 	ResultsPanel,
 	UnknownSolutionCard,
@@ -55,6 +56,54 @@ describe('Circuit Results Dashboard & Upgraded PhasorDiagram', () => {
 		expect(out.body).toContain('Branch Quantities');
 		expect(out.body).toContain('Sources');
 		expect(out.body).toContain('Loads');
+	});
+
+	it('renders every FinalAnswersCard card container with data-result-card, min-w-0, and overflow-hidden', () => {
+		for (const presetId of ['dc-divider', 'ac-rlc-phasor'] as const) {
+			circuit.loadPreset(presetId);
+			expect(circuit.solution.mna.valid).toBe(true);
+
+			const out = render(FinalAnswersCard, {
+				props: {
+					solution: circuit.solution,
+					document: circuit.document
+				}
+			});
+
+			const cardMatches = [...out.body.matchAll(/<(?:div|button)\b[^>]*data-result-card[^>]*>/g)];
+			expect(cardMatches.length, `${presetId} should render data-result-card containers`).toBeGreaterThan(0);
+
+			for (const match of cardMatches) {
+				const tag = match[0];
+				expect(tag, `${presetId} card must include min-w-0`).toContain('min-w-0');
+				expect(tag, `${presetId} card must include overflow-hidden`).toContain('overflow-hidden');
+			}
+		}
+	});
+
+	it('renders inline MathBlock (display=false) with math-inline and never overflow-x-auto', () => {
+		const inlineOut = render(MathBlock, {
+			props: {
+				latex: '\\bar{V}_{AN,src}',
+				display: false
+			}
+		});
+
+		expect(inlineOut.body).toContain('math-inline');
+		expect(inlineOut.body).not.toContain('overflow-x-auto');
+		expect(inlineOut.body).toContain('class="katex"');
+		expect(inlineOut.body).not.toContain('katex-error');
+
+		const blockOut = render(MathBlock, {
+			props: {
+				latex: '\\bar{V}_{AN,src} = \\bar{V}_{an} + \\bar{I}_a Z_{line}',
+				display: true
+			}
+		});
+
+		expect(blockOut.body).toContain('katex-display');
+		expect(blockOut.body).not.toContain('math-inline');
+		expect(blockOut.body).not.toContain('katex-error');
 	});
 
 	it('renders UnknownSolutionCard without step-by-step derivation accordion', () => {
